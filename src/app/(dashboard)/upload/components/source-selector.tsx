@@ -1,6 +1,6 @@
 "use client";
 
-import { CreditCard, Calendar, Ticket } from "lucide-react";
+import { CreditCard, Calendar, Ticket, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SourceType } from "@/lib/types";
 
@@ -11,6 +11,7 @@ const sources: {
   icon: React.ElementType;
   color: string;
   activeColor: string;
+  sampleFile: string;
 }[] = [
   {
     key: "stripe",
@@ -19,6 +20,7 @@ const sources: {
     icon: CreditCard,
     color: "text-slate-400 group-hover:text-violet-500",
     activeColor: "text-violet-500",
+    sampleFile: "/samples/stripe_export.csv",
   },
   {
     key: "calendly",
@@ -27,6 +29,7 @@ const sources: {
     icon: Calendar,
     color: "text-slate-400 group-hover:text-blue-500",
     activeColor: "text-blue-500",
+    sampleFile: "/samples/calendly_export.csv",
   },
   {
     key: "passline",
@@ -35,6 +38,7 @@ const sources: {
     icon: Ticket,
     color: "text-slate-400 group-hover:text-emerald-500",
     activeColor: "text-emerald-500",
+    sampleFile: "/samples/passline_export.csv",
   },
 ];
 
@@ -90,6 +94,20 @@ export function SourceSelector({ value, onChange }: SourceSelectorProps) {
               >
                 {source.description}
               </p>
+              <a
+                href={source.sampleFile}
+                download
+                onClick={(e) => e.stopPropagation()}
+                className={cn(
+                  "mt-2 inline-flex items-center gap-1 text-[11px] font-medium transition-colors",
+                  isActive
+                    ? "text-slate-300 hover:text-white"
+                    : "text-slate-400 hover:text-slate-600"
+                )}
+              >
+                <Download className="h-3 w-3" />
+                Sample CSV
+              </a>
             </div>
             {isActive && (
               <div className="absolute right-3 top-3 h-2 w-2 rounded-full bg-white" />

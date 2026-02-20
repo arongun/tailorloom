@@ -1,0 +1,16 @@
+Invitee Name,Invitee Email,Event Type Name,Event Date & Time,End Date & Time,Status,Event URI,Created At
+Jane Doe,jane@example.com,Strategy Session,"January 16, 2025 10:00 AM","January 16, 2025 11:00 AM",active,https://calendly.com/events/evt_abc123001,2025-01-14T08:30:00Z
+Jane Doe,jane@example.com,Monthly Check-in,"February 5, 2025 2:00 PM","February 5, 2025 2:30 PM",active,https://calendly.com/events/evt_abc123002,2025-02-01T10:15:00Z
+Bob Smith,bob@example.com,Initial Consultation,"January 12, 2025 11:00 AM","January 12, 2025 12:00 PM",active,https://calendly.com/events/evt_abc123003,2025-01-10T09:00:00Z
+Carlos Rivera,carlos@example.com,Discovery Call,"January 20, 2025 3:00 PM","January 20, 2025 3:30 PM",active,https://calendly.com/events/evt_abc123004,2025-01-18T14:00:00Z
+Eve Martinez,eve@example.com,Monthly Check-in,"January 22, 2025 10:00 AM","January 22, 2025 10:30 AM",active,https://calendly.com/events/evt_abc123005,2025-01-20T08:45:00Z
+Grace Kim,grace@example.com,Coaching Session,"January 27, 2025 1:00 PM","January 27, 2025 2:00 PM",active,https://calendly.com/events/evt_abc123006,2025-01-25T11:00:00Z
+Alice Johnson,alice@example.com,Annual Review,"February 3, 2025 9:00 AM","February 3, 2025 10:00 AM",active,https://calendly.com/events/evt_abc123007,2025-01-30T16:00:00Z
+Iris Patel,iris@example.com,Strategy Session,"February 10, 2025 11:00 AM","February 10, 2025 12:00 PM",active,https://calendly.com/events/evt_abc123008,2025-02-07T09:30:00Z
+Dave Wilson,dave@example.com,Follow-up Call,"February 12, 2025 4:00 PM","February 12, 2025 4:30 PM",cancelled,https://calendly.com/events/evt_abc123009,2025-02-10T14:00:00Z
+Kate Chen,kate@example.com,Intro Meeting,"February 14, 2025 10:00 AM","February 14, 2025 10:45 AM",active,https://calendly.com/events/evt_abc123010,2025-02-12T08:00:00Z
+,no-reply@calendly.com,Test Event,"February 15, 2025 9:00 AM","February 15, 2025 9:30 AM",active,https://calendly.com/events/evt_abc123011,2025-02-13T07:00:00Z
+Maria Garcia,maria@example.com,Enterprise Onboarding,"February 19, 2025 2:00 PM","February 19, 2025 3:30 PM",active,https://calendly.com/events/evt_abc123012,2025-02-17T10:00:00Z
+Leo Nguyen,leo@example.com,Quick Check-in,"February 20, 2025 3:00 PM","February 20, 2025 3:15 PM",active,https://calendly.com/events/evt_abc123013,2025-02-18T12:00:00Z
+Jane Doe,jane@example.com,Quarterly Planning,"February 21, 2025 10:00 AM","February 21, 2025 11:30 AM",active,https://calendly.com/events/evt_abc123014,2025-02-19T08:00:00Z
+Nina Okafor,nina@example.com,Workshop Planning,"February 26, 2025 11:00 AM","February 26, 2025 12:00 PM",active,https://calendly.com/events/evt_abc123015,2025-02-24T09:15:00Z

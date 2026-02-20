@@ -1,0 +1,21 @@
+id,Amount,Currency,Status,Customer Email,Customer Name,Customer,Description,Created (UTC)
+pi_3RJkL9M2xQ7vN8,"$1,250.00",usd,succeeded,jane@example.com,Jane Doe,cus_N8kL2mP9xQ,"Monthly retainer - Jan 2025",2025-01-15 09:32:14
+pi_3RJkL9M2xQ7vN9,"$850.00",usd,succeeded,jane@example.com,Jane Doe,cus_N8kL2mP9xQ,"Strategy session",2025-01-22 14:05:41
+pi_3RJkL9M2xQ7vNA,"$1,250.00",usd,succeeded,jane@example.com,Jane Doe,cus_N8kL2mP9xQ,"Monthly retainer - Feb 2025",2025-02-15 09:30:00
+pi_3RJkL9M2xQ7vNB,"$500.00",usd,succeeded,bob@example.com,Bob Smith,cus_P4mK7nR3wY,"Workshop fee",2025-01-10 11:22:33
+pi_3RJkL9M2xQ7vNC,"$750.00",usd,succeeded,bob@example.com,Bob Smith,cus_P4mK7nR3wY,"Consulting - Q1",2025-02-01 16:45:12
+pi_3RJkL9M2xQ7vND,"$2,000.00",usd,succeeded,alice@example.com,Alice Johnson,cus_Q9nL5pT2vX,"Annual subscription",2025-01-05 08:15:00
+pi_3RJkL9M2xQ7vNE,"$350.00",usd,succeeded,dave@example.com,Dave Wilson,cus_R1oM8qU4wZ,"One-time setup",2025-01-18 10:00:00
+pi_3RJkL9M2xQ7vNF,"$1,100.00",usd,succeeded,eve@example.com,Eve Martinez,cus_S3pN2rV5xA,"Monthly retainer - Jan 2025",2025-01-20 12:30:00
+pi_3RJkL9M2xQ7vNG,"$450.00",usd,pending,,Frank Lee,cus_T5qO4sW6yB,"Invoice #1042",2025-02-03 09:11:23
+pi_3RJkL9M2xQ7vNH,"$600.00",usd,succeeded,grace@example.com,Grace Kim,cus_U7rP6tX8zC,"Coaching session x3",2025-01-25 15:20:00
+pi_3RJkL9M2xQ7vNI,"$175.00",usd,refunded,henry@example.com,Henry Brown,cus_V9sQ8uY0AD,"Cancelled workshop",2025-01-12 13:45:00
+pi_3RJkL9M2xQ7vNJ,"$900.00",usd,succeeded,iris@example.com,Iris Patel,cus_W1tR0vZ2BE,"Strategy package",2025-02-08 10:30:00
+pi_3RJkL9M2xQ7vNK,"$1,500.00",usd,succeeded,jane@example.com,Jane Doe,cus_N8kL2mP9xQ,"Quarterly review + planning",2025-02-20 11:00:00
+pi_3RJkL9M2xQ7vNL,"$400.00",usd,failed,,Unknown,,"Failed charge",2025-02-10 08:00:00
+pi_3RJkL9M2xQ7vNM,"$550.00",usd,succeeded,kate@example.com,Kate Chen,cus_X3uS2wA4CF,"Intro consultation",2025-01-28 14:15:00
+pi_3RJkL9M2xQ7vNN,"$1,250.00",usd,succeeded,eve@example.com,Eve Martinez,cus_S3pN2rV5xA,"Monthly retainer - Feb 2025",2025-02-15 12:30:00
+pi_3RJkL9M2xQ7vNO,"$300.00",usd,succeeded,leo@example.com,Leo Nguyen,cus_Y5vT4xB6DG,"Ad-hoc review",2025-02-12 16:00:00
+pi_3RJkL9M2xQ7vNP,"$2,500.00",usd,succeeded,maria@example.com,Maria Garcia,cus_Z7wU6yC8EH,"Enterprise package",2025-02-18 09:00:00
+pi_3RJkL9M2xQ7vNQ,"$800.00",usd,succeeded,bob@example.com,Bob Smith,cus_P4mK7nR3wY,"Consulting - Feb",2025-02-22 11:30:00
+pi_3RJkL9M2xQ7vNR,"$425.00",usd,succeeded,nina@example.com,Nina Okafor,cus_A9xV8zD0FI,"Workshop attendance",2025-02-25 10:00:00
