@@ -35,7 +35,7 @@ const BOOKING_STATUS_MAP: Record<string, string> = {
  */
 export function normalizeStatus(
   value: string,
-  source: "stripe" | "calendly" | "passline"
+  source: string
 ): string {
   const normalized = value.toLowerCase().trim();
 
