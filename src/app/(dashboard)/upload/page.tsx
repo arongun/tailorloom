@@ -2,8 +2,6 @@
 
 import { useState, useCallback, useRef } from "react";
 import {
-  ArrowLeft,
-  ArrowRight,
   Upload,
   RotateCcw,
   CheckCircle2,
@@ -17,7 +15,6 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 
-import { SourceSelector } from "./components/source-selector";
 import { UploadMapper } from "./components/upload-mapper";
 
 import { previewCSV, uploadCSV } from "@/lib/actions/import";
@@ -26,39 +23,31 @@ import { saveMappingTemplate } from "@/lib/actions/mappings";
 import type {
   SourceType,
   ImportResult,
-  SavedMapping,
-  PreviewResult,
 } from "@/lib/types";
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2;
 
 const STEP_LABELS: Record<Step, string> = {
-  1: "Select Source",
-  2: "Upload & Map",
-  3: "Import",
+  1: "Upload & Map",
+  2: "Import",
 };
 
 export default function UploadPage() {
   const [step, setStep] = useState<Step>(1);
 
-  // Step 1
-  const [source, setSource] = useState<SourceType | null>(null);
-
-  // Step 2 — data from UploadMapper
+  // Step 1 — data from UploadMapper (includes auto-detected source)
   const mapperData = useRef<{
+    source: SourceType;
     file: File;
     content: string;
     mapping: Record<string, string>;
     headers: string[];
     totalRows: number;
-    savedMappings: SavedMapping[];
   } | null>(null);
 
-  // Step 2 — preview validation
-  const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // Step 3
+  // Step 2
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -66,27 +55,29 @@ export default function UploadPage() {
 
   const handleMapperReady = useCallback(
     (data: {
+      source: SourceType;
       file: File;
       content: string;
       mapping: Record<string, string>;
       headers: string[];
       totalRows: number;
-      savedMappings: SavedMapping[];
     }) => {
       mapperData.current = data;
-      // Clear stale preview when mapping changes
-      setPreview(null);
     },
     []
   );
 
+  const handleMapperClear = useCallback(() => {
+    mapperData.current = null;
+  }, []);
+
   const handleSaveTemplate = useCallback(
     async (
+      source: SourceType,
       name: string,
       mapping: Record<string, string>,
       headers: string[]
     ) => {
-      if (!source) return;
       try {
         await saveMappingTemplate(source, name, mapping, headers);
         toast.success("Mapping template saved");
@@ -96,23 +87,21 @@ export default function UploadPage() {
         );
       }
     },
-    [source]
+    []
   );
 
   const handleValidateAndImport = async () => {
     const data = mapperData.current;
-    if (!source || !data) return;
+    if (!data) return;
 
-    // First validate via preview
+    // Validate via preview
     setPreviewLoading(true);
     try {
       const result = await previewCSV({
-        source,
+        source: data.source,
         content: data.content,
         mapping: data.mapping,
       });
-      setPreview(result.preview);
-
       if (result.preview.validRows === 0) {
         toast.error("No valid rows to import. Check your column mapping.");
         setPreviewLoading(false);
@@ -120,12 +109,12 @@ export default function UploadPage() {
       }
 
       // Proceed to import
-      setStep(3);
+      setStep(2);
       setPreviewLoading(false);
       setIsImporting(true);
 
       const importRes = await uploadCSV({
-        source,
+        source: data.source,
         fileName: data.file.name,
         content: data.content,
         mapping: data.mapping,
@@ -141,8 +130,8 @@ export default function UploadPage() {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Import failed");
-      // Stay on step 2 if preview fails, go back from 3 if import fails
-      if (step === 3) {
+      // If we already moved to step 2, show error result
+      if (step === 2) {
         setImportResult({
           importId: "",
           totalRows: data.totalRows,
@@ -167,42 +156,14 @@ export default function UploadPage() {
 
   const handleStartOver = () => {
     setStep(1);
-    setSource(null);
     mapperData.current = null;
-    setPreview(null);
     setImportResult(null);
   };
 
   // ─── Navigation ────────────────────────────────────────
 
-  const canGoNext = () => {
-    switch (step) {
-      case 1:
-        return !!source;
-      case 2:
-        return !!mapperData.current && Object.keys(mapperData.current.mapping).length > 0;
-      default:
-        return false;
-    }
-  };
-
-  const handleNext = async () => {
-    if (step === 1) {
-      setStep(2);
-      return;
-    }
-    if (step === 2) {
-      await handleValidateAndImport();
-      return;
-    }
-  };
-
-  const handleBack = () => {
-    if (step === 2) {
-      setStep(1);
-      mapperData.current = null;
-      setPreview(null);
-    }
+  const canImport = () => {
+    return !!mapperData.current && Object.keys(mapperData.current.mapping).length > 0;
   };
 
   // ─── Render ────────────────────────────────────────────
@@ -222,7 +183,7 @@ export default function UploadPage() {
       {/* Step indicator */}
       <div className="mb-8 animate-fade-in-up stagger-2">
         <div className="flex items-center gap-1">
-          {([1, 2, 3] as Step[]).map((s) => (
+          {([1, 2] as Step[]).map((s) => (
             <div key={s} className="flex items-center">
               <div
                 className={cn(
@@ -248,7 +209,7 @@ export default function UploadPage() {
               >
                 {STEP_LABELS[s]}
               </span>
-              {s < 3 && (
+              {s < 2 && (
                 <div
                   className={cn(
                     "mx-4 h-px w-10",
@@ -266,34 +227,17 @@ export default function UploadPage() {
         {step === 1 && (
           <div className="space-y-4">
             <p className="text-[13px] text-slate-500 mb-4">
-              Choose the data source for your CSV file
-            </p>
-            <SourceSelector value={source} onChange={setSource} />
-          </div>
-        )}
-
-        {step === 2 && source && (
-          <div className="space-y-4">
-            <p className="text-[13px] text-slate-500 mb-4">
-              Upload a CSV export from{" "}
-              <span className="font-medium text-slate-700">
-                {source === "stripe"
-                  ? "Stripe"
-                  : source === "calendly"
-                    ? "Calendly"
-                    : "PassLine"}
-              </span>
-              , then map columns to the right fields
+              Upload a CSV export — the source type is auto-detected from the column headers
             </p>
             <UploadMapper
-              source={source}
               onReady={handleMapperReady}
+              onClear={handleMapperClear}
               onSaveTemplate={handleSaveTemplate}
             />
           </div>
         )}
 
-        {step === 3 && (
+        {step === 2 && (
           <ImportResultView
             result={importResult}
             isImporting={isImporting}
@@ -304,17 +248,7 @@ export default function UploadPage() {
       {/* Navigation */}
       <div className="mt-8 flex items-center justify-between animate-fade-in-up stagger-4">
         <div>
-          {step === 2 && (
-            <Button
-              variant="ghost"
-              onClick={handleBack}
-              className="text-[13px] text-slate-500 hover:text-slate-700"
-            >
-              <ArrowLeft className="mr-1.5 h-4 w-4" />
-              Back
-            </Button>
-          )}
-          {step === 3 && !isImporting && (
+          {step === 2 && !isImporting && (
             <Button
               variant="ghost"
               onClick={handleStartOver}
@@ -326,19 +260,14 @@ export default function UploadPage() {
           )}
         </div>
         <div>
-          {step < 3 && (
+          {step === 1 && (
             <Button
-              onClick={handleNext}
-              disabled={!canGoNext() || previewLoading}
+              onClick={handleValidateAndImport}
+              disabled={!canImport() || previewLoading}
               className="text-[13px]"
             >
               {previewLoading ? (
                 "Validating..."
-              ) : step === 1 ? (
-                <>
-                  Continue
-                  <ArrowRight className="ml-1.5 h-4 w-4" />
-                </>
               ) : (
                 <>
                   <Upload className="mr-1.5 h-4 w-4" />

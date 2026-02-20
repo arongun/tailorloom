@@ -11,9 +11,12 @@ import {
   Save,
   FolderOpen,
   Minus,
+  CreditCard,
+  Calendar,
+  Ticket,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Dialog,
@@ -29,28 +32,30 @@ import {
   suggestionsToMapping,
 } from "@/lib/csv/heuristic-mapper";
 import { getSchema } from "@/lib/csv/schemas";
+import { detectSource, isConfidentDetection } from "@/lib/csv/detect-source";
 import { getSavedMappings } from "@/lib/actions/mappings";
 import type {
   SourceType,
   SourceSchema,
   MappingSuggestion,
   SavedMapping,
-  SchemaField,
 } from "@/lib/types";
+import type { DetectionResult } from "@/lib/csv/detect-source";
 
 // ─── Types ───────────────────────────────────────────────────
 
 interface UploadMapperProps {
-  source: SourceType;
   onReady: (data: {
+    source: SourceType;
     file: File;
     content: string;
     mapping: Record<string, string>;
     headers: string[];
     totalRows: number;
-    savedMappings: SavedMapping[];
   }) => void;
+  onClear: () => void;
   onSaveTemplate: (
+    source: SourceType,
     name: string,
     mapping: Record<string, string>,
     headers: string[]
@@ -66,6 +71,55 @@ interface ColumnDropdownProps {
   onSelect: (csvHeader: string, schemaField: string | null) => void;
 }
 
+// ─── Source picker (fallback) ────────────────────────────────
+
+const SOURCE_META: Record<
+  string,
+  { label: string; icon: React.ElementType; color: string }
+> = {
+  stripe: { label: "Stripe", icon: CreditCard, color: "text-violet-500" },
+  calendly: { label: "Calendly", icon: Calendar, color: "text-blue-500" },
+  passline: { label: "PassLine", icon: Ticket, color: "text-emerald-500" },
+};
+
+function SourcePicker({
+  results,
+  onSelect,
+}: {
+  results: DetectionResult[];
+  onSelect: (source: SourceType) => void;
+}) {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+        <p className="text-[12px] font-medium text-amber-800">
+          Couldn&apos;t confidently detect the source type. Which is it?
+        </p>
+      </div>
+      <div className="flex gap-2">
+        {results.map((r) => {
+          const meta = SOURCE_META[r.source];
+          const Icon = meta.icon;
+          return (
+            <button
+              key={r.source}
+              onClick={() => onSelect(r.source)}
+              className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-700 hover:border-slate-300 hover:shadow-sm transition-all"
+            >
+              <Icon className={cn("h-4 w-4", meta.color)} strokeWidth={1.8} />
+              {meta.label}
+              <span className="text-[10px] text-slate-400">
+                {Math.round(r.confidence * 100)}%
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Confidence indicator ────────────────────────────────────
 
 function ConfidenceDot({ confidence }: { confidence: number }) {
@@ -76,7 +130,9 @@ function ConfidenceDot({ confidence }: { confidence: number }) {
       : confidence >= 0.5
         ? "bg-amber-400"
         : "bg-rose-400";
-  return <span className={cn("inline-block h-1.5 w-1.5 rounded-full", color)} />;
+  return (
+    <span className={cn("inline-block h-1.5 w-1.5 rounded-full", color)} />
+  );
 }
 
 // ─── Column header dropdown ──────────────────────────────────
@@ -92,7 +148,6 @@ function ColumnDropdown({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
@@ -128,17 +183,14 @@ function ColumnDropdown({
         <ChevronDown className="ml-auto h-3 w-3 shrink-0 opacity-40" />
       </button>
 
-      {/* CSV header subtitle */}
       <div className="px-3 pb-1.5">
         <span className="text-[10px] font-mono text-slate-400 truncate block">
           {csvHeader}
         </span>
       </div>
 
-      {/* Dropdown menu */}
       {open && (
         <div className="absolute top-full left-0 z-50 mt-1 w-56 rounded-lg border border-slate-200 bg-white shadow-lg shadow-slate-200/50 py-1 animate-fade-in">
-          {/* Skip option */}
           <button
             onClick={() => {
               onSelect(csvHeader, null);
@@ -160,7 +212,6 @@ function ColumnDropdown({
 
           <div className="my-1 h-px bg-slate-100" />
 
-          {/* Schema fields */}
           {schema.fields.map((field) => {
             const isUsed =
               usedFields.has(field.key) && field.key !== currentField;
@@ -214,8 +265,8 @@ function ColumnDropdown({
 // ─── Main component ──────────────────────────────────────────
 
 export function UploadMapper({
-  source,
   onReady,
+  onClear,
   onSaveTemplate,
 }: UploadMapperProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -226,10 +277,18 @@ export function UploadMapper({
   const [isDragging, setIsDragging] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
 
+  // Detection state
+  const [detectedSource, setDetectedSource] = useState<SourceType | null>(null);
+  const [detectionResults, setDetectionResults] = useState<DetectionResult[]>(
+    []
+  );
+  const [needsSourcePick, setNeedsSourcePick] = useState(false);
+
   // Data state
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [totalRows, setTotalRows] = useState(0);
+  const [sampleRows, setSampleRows] = useState<Record<string, string>[]>([]);
 
   // Mapping state
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -240,9 +299,9 @@ export function UploadMapper({
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
 
-  const schema = getSchema(source)!;
+  const schema = detectedSource ? getSchema(detectedSource) : null;
 
-  // Confidence map from suggestions
+  // Confidence map
   const confidenceMap = useMemo(() => {
     const m = new Map<string, number>();
     for (const s of suggestions) {
@@ -251,13 +310,13 @@ export function UploadMapper({
     return m;
   }, [suggestions]);
 
-  // Used fields set
+  // Used fields
   const usedFields = useMemo(() => {
     return new Set(Object.values(mapping));
   }, [mapping]);
 
   // Required fields check
-  const requiredFields = schema.fields.filter((f) => f.required);
+  const requiredFields = schema?.fields.filter((f) => f.required) ?? [];
   const missingRequired = requiredFields.filter(
     (f) => !usedFields.has(f.key)
   );
@@ -265,23 +324,58 @@ export function UploadMapper({
 
   // Notify parent when mapping changes
   useEffect(() => {
-    if (file && fileContent && Object.keys(mapping).length > 0) {
+    if (
+      file &&
+      fileContent &&
+      detectedSource &&
+      Object.keys(mapping).length > 0
+    ) {
       onReady({
+        source: detectedSource,
         file,
         content: fileContent,
         mapping,
         headers,
         totalRows,
-        savedMappings,
       });
     }
-  }, [mapping, file, fileContent, headers, totalRows, savedMappings, onReady]);
+  }, [
+    mapping,
+    file,
+    fileContent,
+    detectedSource,
+    headers,
+    totalRows,
+    onReady,
+  ]);
+
+  // ─── Apply mapping for a given source ────────────────────
+
+  const applySource = useCallback(
+    async (source: SourceType, hdrs: string[], samples: Record<string, string>[]) => {
+      setDetectedSource(source);
+
+      const s = getSchema(source)!;
+      const suggs = generateMappingSuggestions(hdrs, s, samples);
+      setSuggestions(suggs);
+      setMapping(suggestionsToMapping(suggs));
+
+      try {
+        const saved = await getSavedMappings(source);
+        setSavedMappings(saved);
+      } catch {
+        // Non-critical
+      }
+    },
+    []
+  );
 
   // ─── File handling ───────────────────────────────────────
 
   const processFile = useCallback(
     async (f: File) => {
       setFileError(null);
+      setNeedsSourcePick(false);
 
       if (!f.name.toLowerCase().endsWith(".csv")) {
         setFileError("Only CSV files are supported");
@@ -310,27 +404,23 @@ export function UploadMapper({
       // Parse
       const parsed = parseCSVContent(content);
       setHeaders(parsed.headers);
-      setRows(parsed.rows.slice(0, 8)); // Show first 8 rows
+      setRows(parsed.rows.slice(0, 8));
       setTotalRows(parsed.totalRows);
+      setSampleRows(parsed.sampleRows);
 
-      // Generate mapping
-      const suggs = generateMappingSuggestions(
-        parsed.headers,
-        schema,
-        parsed.sampleRows
-      );
-      setSuggestions(suggs);
-      setMapping(suggestionsToMapping(suggs));
+      // Auto-detect source
+      const results = detectSource(parsed.headers, parsed.sampleRows);
+      setDetectionResults(results);
 
-      // Load saved mappings
-      try {
-        const saved = await getSavedMappings(source);
-        setSavedMappings(saved);
-      } catch {
-        // Non-critical
+      if (isConfidentDetection(results)) {
+        // Auto-select
+        await applySource(results[0].source, parsed.headers, parsed.sampleRows);
+      } else {
+        // Need user to pick
+        setNeedsSourcePick(true);
       }
     },
-    [schema, source]
+    [applySource]
   );
 
   const handleDrop = useCallback(
@@ -349,17 +439,30 @@ export function UploadMapper({
     setHeaders([]);
     setRows([]);
     setTotalRows(0);
+    setSampleRows([]);
     setMapping({});
     setSuggestions([]);
+    setDetectedSource(null);
+    setDetectionResults([]);
+    setNeedsSourcePick(false);
+    setSavedMappings([]);
     if (inputRef.current) inputRef.current.value = "";
+    onClear();
+  };
+
+  const handleSourcePick = async (source: SourceType) => {
+    setNeedsSourcePick(false);
+    await applySource(source, headers, sampleRows);
   };
 
   // ─── Mapping handling ────────────────────────────────────
 
-  const handleFieldSelect = (csvHeader: string, schemaField: string | null) => {
+  const handleFieldSelect = (
+    csvHeader: string,
+    schemaField: string | null
+  ) => {
     const newMapping = { ...mapping };
 
-    // Remove previous assignment if reassigning a field
     if (schemaField) {
       for (const [k, v] of Object.entries(newMapping)) {
         if (v === schemaField && k !== csvHeader) {
@@ -379,8 +482,8 @@ export function UploadMapper({
   };
 
   const handleSaveTemplate = () => {
-    if (!templateName.trim()) return;
-    onSaveTemplate(templateName.trim(), mapping, headers);
+    if (!templateName.trim() || !detectedSource) return;
+    onSaveTemplate(detectedSource, templateName.trim(), mapping, headers);
     setSaveDialogOpen(false);
     setTemplateName("");
   };
@@ -422,14 +525,14 @@ export function UploadMapper({
             <p className="mt-4 text-[13px] font-medium text-slate-700">
               {isDragging
                 ? "Drop your file here"
-                : "Drag & drop your CSV file"}
+                : "Drag & drop a CSV from Stripe, Calendly, or PassLine"}
             </p>
             <p className="mt-1 text-[12px] text-slate-400">
               or{" "}
               <span className="font-medium text-slate-500 underline underline-offset-2">
                 browse files
               </span>{" "}
-              — up to 10 MB
+              — source type is auto-detected
             </p>
           </div>
         </div>
@@ -448,21 +551,63 @@ export function UploadMapper({
             {fileError}
           </p>
         )}
+        {/* Sample CSVs */}
+        <div className="mt-4 flex items-center justify-center gap-4">
+          <span className="text-[11px] text-slate-400">Try a sample:</span>
+          <a
+            href="/samples/stripe_export.csv"
+            download
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            Stripe
+          </a>
+          <a
+            href="/samples/calendly_export.csv"
+            download
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            Calendly
+          </a>
+          <a
+            href="/samples/passline_export.csv"
+            download
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            PassLine
+          </a>
+        </div>
       </div>
     );
   }
 
-  // ─── Render: File loaded — table preview ─────────────────
+  // ─── Render: File loaded, needs source pick ──────────────
 
-  // Build reverse mapping: schemaField → csvHeader for cell lookups
-  const reverseMapping: Record<string, string> = {};
-  for (const [csv, field] of Object.entries(mapping)) {
-    reverseMapping[field] = csv;
+  if (needsSourcePick) {
+    return (
+      <div className="space-y-4">
+        {/* Compact file bar */}
+        <FileBar file={file} onClear={clearFile} />
+
+        <SourcePicker results={detectionResults} onSelect={handleSourcePick} />
+
+        {/* Still show raw data preview while picking */}
+        <RawPreview headers={headers} rows={rows} totalRows={totalRows} />
+      </div>
+    );
   }
+
+  // ─── Render: File loaded + source detected — full table ──
+
+  if (!schema) return null;
+
+  const sourceMeta = SOURCE_META[detectedSource!];
 
   return (
     <div className="space-y-4">
-      {/* Compact file bar + toolbar */}
+      {/* Compact file bar + detected source + toolbar */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 shrink-0">
@@ -472,9 +617,18 @@ export function UploadMapper({
             />
           </div>
           <div className="min-w-0">
-            <p className="text-[13px] font-medium text-slate-900 truncate">
-              {file.name}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-[13px] font-medium text-slate-900 truncate">
+                {file.name}
+              </p>
+              <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                <sourceMeta.icon
+                  className={cn("h-3 w-3", sourceMeta.color)}
+                  strokeWidth={2}
+                />
+                {sourceMeta.label}
+              </span>
+            </div>
             <p className="text-[11px] text-slate-400">
               {totalRows} rows &middot;{" "}
               {(file.size / 1024).toFixed(1)} KB &middot;{" "}
@@ -486,7 +640,7 @@ export function UploadMapper({
                     : "text-emerald-600"
                 )}
               >
-                {mappedCount}/{headers.length} columns mapped
+                {mappedCount}/{headers.length} mapped
               </span>
             </p>
           </div>
@@ -553,7 +707,6 @@ export function UploadMapper({
       <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
-            {/* Column headers — interactive mapping dropdowns */}
             <thead>
               <tr className="border-b border-slate-100">
                 <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-10 border-r border-slate-100">
@@ -584,8 +737,6 @@ export function UploadMapper({
                 })}
               </tr>
             </thead>
-
-            {/* Data rows */}
             <tbody>
               {rows.map((row, i) => (
                 <tr
@@ -603,7 +754,6 @@ export function UploadMapper({
                       : null;
                     const isMapped = !!field;
 
-                    // Inline validation hint
                     let cellWarning = false;
                     if (fieldDef?.required && !val.trim()) {
                       cellWarning = true;
@@ -628,7 +778,6 @@ export function UploadMapper({
           </table>
         </div>
 
-        {/* Table footer — row count */}
         <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-2 flex items-center justify-between">
           <p className="text-[11px] text-slate-400">
             Showing {rows.length} of {totalRows} rows
@@ -692,6 +841,93 @@ export function UploadMapper({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Helper sub-components ───────────────────────────────────
+
+function FileBar({ file, onClear }: { file: File; onClear: () => void }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 shrink-0">
+        <FileText className="h-4 w-4 text-slate-500" strokeWidth={1.8} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-medium text-slate-900 truncate">
+          {file.name}
+        </p>
+        <p className="text-[11px] text-slate-400">
+          {(file.size / 1024).toFixed(1)} KB
+        </p>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onClear}
+        className="h-7 w-7 shrink-0 text-slate-400 hover:text-slate-600"
+      >
+        <X className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+function RawPreview({
+  headers,
+  rows,
+  totalRows,
+}: {
+  headers: string[];
+  rows: Record<string, string>[];
+  totalRows: number;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="border-b border-slate-100">
+              <th className="bg-slate-50 px-3 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-10 border-r border-slate-100">
+                #
+              </th>
+              {headers.map((h) => (
+                <th
+                  key={h}
+                  className="bg-slate-50 px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider min-w-[120px] border-r border-slate-50 last:border-r-0"
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, 4).map((row, i) => (
+              <tr
+                key={i}
+                className="border-b border-slate-50 last:border-b-0"
+              >
+                <td className="px-3 py-2 text-[11px] font-mono text-slate-300 border-r border-slate-100">
+                  {i + 1}
+                </td>
+                {headers.map((h) => (
+                  <td
+                    key={h}
+                    className="px-3 py-2 text-[12px] text-slate-500 max-w-[200px] truncate border-r border-slate-50 last:border-r-0"
+                  >
+                    {row[h] || "—"}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-2">
+        <p className="text-[11px] text-slate-400">
+          {totalRows} rows total — select a source type to map columns
+        </p>
+      </div>
     </div>
   );
 }
