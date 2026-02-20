@@ -221,19 +221,14 @@ function ColumnDropdown({
               <button
                 key={field.key}
                 onClick={() => {
-                  if (!isUsed) {
-                    onSelect(csvHeader, field.key);
-                    setOpen(false);
-                  }
+                  onSelect(csvHeader, field.key);
+                  setOpen(false);
                 }}
-                disabled={isUsed}
                 className={cn(
                   "flex items-center gap-2 w-full px-3 py-2 text-[12px] text-left transition-colors",
                   isSelected
                     ? "bg-slate-900 text-white"
-                    : isUsed
-                      ? "text-slate-300 cursor-not-allowed"
-                      : "text-slate-700 hover:bg-slate-50"
+                    : "text-slate-700 hover:bg-slate-50"
                 )}
               >
                 <span className="truncate flex-1">
@@ -250,7 +245,7 @@ function ColumnDropdown({
                   )}
                 </span>
                 {isUsed && (
-                  <span className="text-[10px] text-slate-300">mapped</span>
+                  <span className="text-[10px] text-slate-400">in use</span>
                 )}
                 {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
               </button>
@@ -286,9 +281,10 @@ export function UploadMapper({
 
   // Data state
   const [headers, setHeaders] = useState<string[]>([]);
-  const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [allRows, setAllRows] = useState<Record<string, string>[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [sampleRows, setSampleRows] = useState<Record<string, string>[]>([]);
+  const [visibleRowCount, setVisibleRowCount] = useState(50);
 
   // Mapping state
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -321,6 +317,12 @@ export function UploadMapper({
     (f) => !usedFields.has(f.key)
   );
   const mappedCount = Object.values(mapping).filter(Boolean).length;
+
+  // Visible rows for the table
+  const rows = useMemo(
+    () => allRows.slice(0, visibleRowCount),
+    [allRows, visibleRowCount]
+  );
 
   // Notify parent when mapping changes
   useEffect(() => {
@@ -404,9 +406,10 @@ export function UploadMapper({
       // Parse
       const parsed = parseCSVContent(content);
       setHeaders(parsed.headers);
-      setRows(parsed.rows.slice(0, 8));
+      setAllRows(parsed.rows);
       setTotalRows(parsed.totalRows);
       setSampleRows(parsed.sampleRows);
+      setVisibleRowCount(50);
 
       // Auto-detect source
       const results = detectSource(parsed.headers, parsed.sampleRows);
@@ -437,9 +440,10 @@ export function UploadMapper({
     setFile(null);
     setFileContent("");
     setHeaders([]);
-    setRows([]);
+    setAllRows([]);
     setTotalRows(0);
     setSampleRows([]);
+    setVisibleRowCount(50);
     setMapping({});
     setSuggestions([]);
     setDetectedSource(null);
@@ -594,7 +598,7 @@ export function UploadMapper({
         <SourcePicker results={detectionResults} onSelect={handleSourcePick} />
 
         {/* Still show raw data preview while picking */}
-        <RawPreview headers={headers} rows={rows} totalRows={totalRows} />
+        <RawPreview headers={headers} rows={allRows.slice(0, 4)} totalRows={totalRows} />
       </div>
     );
   }
@@ -779,9 +783,24 @@ export function UploadMapper({
         </div>
 
         <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-2 flex items-center justify-between">
-          <p className="text-[11px] text-slate-400">
-            Showing {rows.length} of {totalRows} rows
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-[11px] text-slate-400">
+              Showing {rows.length} of {totalRows} rows
+            </p>
+            {totalRows > 50 && (
+              <select
+                value={visibleRowCount}
+                onChange={(e) => setVisibleRowCount(Number(e.target.value))}
+                className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[11px] text-slate-600 cursor-pointer hover:border-slate-300 transition-colors"
+              >
+                <option value={50}>50 rows</option>
+                <option value={100}>100 rows</option>
+                <option value={250}>250 rows</option>
+                <option value={500}>500 rows</option>
+                <option value={totalRows}>All ({totalRows})</option>
+              </select>
+            )}
+          </div>
           <div className="flex items-center gap-4 text-[11px] text-slate-400">
             <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
