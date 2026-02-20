@@ -13,9 +13,9 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
-  const supabase = createClient();
 
   const handleGoogleLogin = async () => {
+    const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
@@ -30,6 +30,7 @@ export default function LoginPage() {
     if (!email.trim()) return;
 
     setLoading(true);
+    const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: {
