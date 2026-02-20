@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
+  const [devPassword, setDevPassword] = useState("");
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const handleGoogleLogin = async () => {
@@ -116,6 +117,26 @@ export default function LoginPage() {
     }
   };
 
+  const handleDevLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!devPassword.trim()) return;
+
+    setLoading(true);
+    const res = await fetch("/api/auth/dev", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: devPassword.trim() }),
+    });
+
+    if (res.ok) {
+      router.push("/");
+    } else {
+      const data = await res.json();
+      toast.error(data.error || "Dev login failed");
+      setLoading(false);
+    }
+  };
+
   const handleResend = async () => {
     setLoading(true);
     const supabase = createClient();
@@ -203,6 +224,34 @@ export default function LoginPage() {
                   disabled={loading}
                 >
                   {loading ? "Sending code..." : "Continue with email"}
+                </Button>
+              </form>
+
+              {/* Dev mode */}
+              <div className="flex items-center gap-3 my-6">
+                <Separator className="flex-1" />
+                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                  dev
+                </span>
+                <Separator className="flex-1" />
+              </div>
+
+              <form onSubmit={handleDevLogin} className="flex gap-2">
+                <Input
+                  type="password"
+                  placeholder="Dev password"
+                  value={devPassword}
+                  onChange={(e) => setDevPassword(e.target.value)}
+                  className="h-10 text-[13px] border-slate-200"
+                  required
+                />
+                <Button
+                  type="submit"
+                  variant="outline"
+                  className="h-10 text-[13px] font-medium border-slate-200 shrink-0"
+                  disabled={loading}
+                >
+                  {loading ? "..." : "Go"}
                 </Button>
               </form>
             </>
