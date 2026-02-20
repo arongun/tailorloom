@@ -16,7 +16,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
+  const [otp, setOtp] = useState(["", "", "", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -63,7 +63,7 @@ export default function LoginPage() {
 
     if (error) {
       toast.error("Invalid code. Please try again.");
-      setOtp(["", "", "", "", "", ""]);
+      setOtp(["", "", "", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
     } else {
       router.push("/");
@@ -78,13 +78,13 @@ export default function LoginPage() {
     setOtp(newOtp);
 
     // Auto-advance to next input
-    if (digit && index < 5) {
+    if (digit && index < 7) {
       inputRefs.current[index + 1]?.focus();
     }
 
-    // Auto-submit when all 6 digits are entered
+    // Auto-submit when all 8 digits are entered
     const code = newOtp.join("");
-    if (code.length === 6 && newOtp.every((d) => d !== "")) {
+    if (code.length === 8 && newOtp.every((d) => d !== "")) {
       handleVerifyOtp(code);
     }
   };
@@ -100,16 +100,16 @@ export default function LoginPage() {
 
   const handleOtpPaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 8);
     if (!pasted) return;
 
     const newOtp = [...otp];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       newOtp[i] = pasted[i] || "";
     }
     setOtp(newOtp);
 
-    if (pasted.length === 6) {
+    if (pasted.length === 8) {
       handleVerifyOtp(pasted);
     } else {
       inputRefs.current[pasted.length]?.focus();
@@ -127,7 +127,7 @@ export default function LoginPage() {
     if (error) {
       toast.error(error.message);
     } else {
-      setOtp(["", "", "", "", "", ""]);
+      setOtp(["", "", "", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
       toast.success("New code sent");
     }
@@ -212,7 +212,7 @@ export default function LoginPage() {
               <button
                 onClick={() => {
                   setStep("email");
-                  setOtp(["", "", "", "", "", ""]);
+                  setOtp(["", "", "", "", "", "", "", ""]);
                 }}
                 className="flex items-center gap-1.5 text-[12px] text-slate-500 hover:text-slate-700 transition-colors -mt-2 mb-4"
               >
@@ -225,7 +225,7 @@ export default function LoginPage() {
                   Enter verification code
                 </p>
                 <p className="text-[12px] text-slate-500 mt-1">
-                  We sent a 6-digit code to{" "}
+                  We sent an 8-digit code to{" "}
                   <span className="font-medium text-slate-700">{email}</span>
                 </p>
               </div>
@@ -246,7 +246,7 @@ export default function LoginPage() {
                     onChange={(e) => handleOtpChange(i, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(i, e)}
                     disabled={loading}
-                    className="w-11 h-12 text-center text-lg font-semibold text-slate-900 border border-slate-200 rounded-lg bg-white focus:border-slate-900 focus:ring-1 focus:ring-slate-900 outline-none transition-all disabled:opacity-50"
+                    className="w-9 h-11 text-center text-base font-semibold text-slate-900 border border-slate-200 rounded-lg bg-white focus:border-slate-900 focus:ring-1 focus:ring-slate-900 outline-none transition-all disabled:opacity-50"
                   />
                 ))}
               </div>
