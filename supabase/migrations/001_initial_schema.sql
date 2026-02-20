@@ -3,14 +3,13 @@
 -- Run this in the Supabase SQL Editor
 -- ============================================================
 
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- pgcrypto is enabled by default on Supabase (provides gen_random_uuid())
 
 -- ============================================================
 -- 1. Organizations (future multi-tenant, single default for M1)
 -- ============================================================
 CREATE TABLE organizations (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -23,7 +22,7 @@ VALUES ('00000000-0000-0000-0000-000000000001', 'Default Organization');
 -- 2. Customers (unified identity)
 -- ============================================================
 CREATE TABLE customers (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
     REFERENCES organizations(id) ON DELETE CASCADE,
   name TEXT,
@@ -46,7 +45,7 @@ CREATE UNIQUE INDEX idx_customers_org_email
 CREATE TYPE source_type AS ENUM ('stripe', 'calendly', 'passline', 'manual');
 
 CREATE TABLE customer_sources (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
   source source_type NOT NULL,
   external_id TEXT NOT NULL,
@@ -69,7 +68,7 @@ CREATE INDEX idx_customer_sources_external_email
 CREATE TYPE import_status AS ENUM ('pending', 'processing', 'completed', 'failed');
 
 CREATE TABLE import_history (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
     REFERENCES organizations(id) ON DELETE CASCADE,
   source source_type NOT NULL,
@@ -98,7 +97,7 @@ CREATE INDEX idx_import_history_status ON import_history(status);
 CREATE TYPE payment_status AS ENUM ('succeeded', 'pending', 'failed', 'refunded');
 
 CREATE TABLE payments (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
     REFERENCES organizations(id) ON DELETE CASCADE,
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
@@ -127,7 +126,7 @@ CREATE INDEX idx_payments_payment_date ON payments(payment_date);
 CREATE TYPE booking_status AS ENUM ('scheduled', 'completed', 'cancelled', 'no_show');
 
 CREATE TABLE bookings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
     REFERENCES organizations(id) ON DELETE CASCADE,
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
@@ -152,7 +151,7 @@ CREATE INDEX idx_bookings_start_time ON bookings(start_time);
 -- 7. Attendance (PassLine data)
 -- ============================================================
 CREATE TABLE attendance (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
     REFERENCES organizations(id) ON DELETE CASCADE,
   customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
@@ -174,7 +173,7 @@ CREATE INDEX idx_attendance_org_id ON attendance(org_id);
 -- 8. Saved Mappings (reusable column mappings per source)
 -- ============================================================
 CREATE TABLE saved_mappings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
     REFERENCES organizations(id) ON DELETE CASCADE,
   source source_type NOT NULL,
@@ -195,7 +194,7 @@ CREATE INDEX idx_saved_mappings_org_source
 CREATE TYPE conflict_status AS ENUM ('pending', 'merged', 'dismissed', 'split');
 
 CREATE TABLE stitching_conflicts (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001'
     REFERENCES organizations(id) ON DELETE CASCADE,
   customer_a_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
