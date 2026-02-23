@@ -10,13 +10,21 @@ import {
 import { validateMappedRow, applyMapping, parseCurrency, parseTimestamp } from "@/lib/csv/validators";
 import { normalizeStatus } from "@/lib/csv/normalizers";
 import { getSchema } from "@/lib/csv/schemas";
-import { stitchIdentity, detectPostImportConflicts } from "@/lib/stitching/matcher";
+import {
+  stitchIdentity,
+  detectPostImportConflicts,
+  previewStitchIdentity,
+  checkDuplicateRow,
+} from "@/lib/stitching/matcher";
 import type {
   SourceType,
-  ImportResult,
+  ImportResultDetailed,
   PreviewResult,
   ValidationError,
   MappingSuggestion,
+  StitchPreviewResult,
+  StitchPreviewRow,
+  StitchDecisions,
 } from "@/lib/types";
 import { findMatchingSavedMapping } from "./mappings";
 
@@ -25,6 +33,7 @@ interface UploadOptions {
   fileName: string;
   content: string;
   mapping?: Record<string, string>;
+  stitchDecisions?: StitchDecisions;
 }
 
 interface PreviewOptions {
@@ -129,9 +138,125 @@ export async function previewCSV(options: PreviewOptions): Promise<{
 }
 
 /**
+ * Preview stitching: parse, map, validate, then run read-only stitch preview
+ * on all valid rows to show match breakdown without writing to DB.
+ */
+export async function previewStitching(options: {
+  source: SourceType;
+  content: string;
+  mapping: Record<string, string>;
+}): Promise<StitchPreviewResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const admin = createAdminClient();
+  const schema = getSchema(options.source);
+  if (!schema) throw new Error(`Unknown source: ${options.source}`);
+
+  const parsed = parseCSVContent(options.content);
+
+  const uncertainRows: StitchPreviewRow[] = [];
+  const confidentRows: StitchPreviewRow[] = [];
+  const newRows: StitchPreviewRow[] = [];
+  const duplicateRows: StitchPreviewRow[] = [];
+
+  let confidentCount = 0;
+  let uncertainCount = 0;
+  let newCount = 0;
+  let duplicateCount = 0;
+  let totalValid = 0;
+
+  for (let i = 0; i < parsed.rows.length; i++) {
+    const rawRow = parsed.rows[i];
+    const mapped = applyMapping(rawRow, options.mapping);
+    if (mapped.status) {
+      mapped.status = normalizeStatus(mapped.status, options.source);
+    }
+    const rowErrors = validateMappedRow(mapped, schema, i + 1);
+    if (rowErrors.length > 0) continue;
+
+    totalValid++;
+
+    const externalId = mapped[schema.idField] ?? "";
+    const email = mapped[schema.emailField] ?? null;
+    const name = mapped[schema.nameField] ?? null;
+
+    // Check duplicate first
+    if (externalId) {
+      const isDuplicate = await checkDuplicateRow(admin, options.source, externalId);
+      if (isDuplicate) {
+        duplicateCount++;
+        if (duplicateRows.length < 20) {
+          duplicateRows.push({
+            rowIndex: i + 1,
+            externalId,
+            email,
+            name,
+            category: "duplicate",
+            existingCustomerId: null,
+            existingCustomerName: null,
+            existingCustomerEmail: null,
+            confidence: 1,
+          });
+        }
+        continue;
+      }
+    }
+
+    // Preview stitch
+    const preview = await previewStitchIdentity(admin, options.source, externalId, email, name);
+
+    const row: StitchPreviewRow = {
+      rowIndex: i + 1,
+      externalId,
+      email,
+      name,
+      category: preview.category,
+      existingCustomerId: preview.existingCustomerId,
+      existingCustomerName: preview.existingCustomerName,
+      existingCustomerEmail: preview.existingCustomerEmail,
+      confidence: preview.confidence,
+    };
+
+    switch (preview.category) {
+      case "external_id":
+      case "email":
+        confidentCount++;
+        if (confidentRows.length < 50) confidentRows.push(row);
+        break;
+      case "name_conflict":
+        uncertainCount++;
+        uncertainRows.push(row); // Keep all uncertain rows — user must decide
+        break;
+      case "new":
+        newCount++;
+        if (newRows.length < 50) newRows.push(row);
+        break;
+    }
+  }
+
+  return {
+    summary: {
+      confidentMatches: confidentCount,
+      uncertainMatches: uncertainCount,
+      newCustomers: newCount,
+      duplicateRows: duplicateCount,
+      totalValidRows: totalValid,
+    },
+    uncertainRows,
+    confidentRows,
+    newRows,
+    duplicateRows,
+  };
+}
+
+/**
  * Full CSV import: parse, map, validate, stitch identities, write to DB.
  */
-export async function uploadCSV(options: UploadOptions): Promise<ImportResult> {
+export async function uploadCSV(options: UploadOptions): Promise<ImportResultDetailed> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -190,11 +315,20 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResult> {
   let errorRows = 0;
   const errors: ValidationError[] = [];
 
+  // Detailed counters
+  let matchedByExternalId = 0;
+  let matchedByEmail = 0;
+  let newCustomersCreated = 0;
+  let duplicateRowsSkipped = 0;
+  let userSkippedRows = 0;
+  let conflictsCreated = 0;
+
+  const decisions = options.stitchDecisions ?? {};
+
   // Process each row
   for (let i = 0; i < parsed.rows.length; i++) {
     const rawRow = parsed.rows[i];
     const mapped = applyMapping(rawRow, mapping);
-    // Normalize status field before validation
     if (mapped.status) {
       mapped.status = normalizeStatus(mapped.status, options.source);
     }
@@ -207,19 +341,48 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResult> {
     }
 
     try {
-      // Extract identity fields
       const externalId = mapped[schema.idField] ?? "";
       const email = mapped[schema.emailField] ?? null;
       const name = mapped[schema.nameField] ?? null;
 
+      // Check for user skip decision
+      const decision = decisions[i + 1]; // decisions are keyed by 1-based row index
+      if (decision && decision.action === "skip") {
+        userSkippedRows++;
+        skippedRows++;
+        continue;
+      }
+
+      // Determine forceCustomerId from user merge decision
+      const forceId =
+        decision && decision.action === "merge"
+          ? decision.targetCustomerId
+          : undefined;
+
       // Stitch identity
-      const { customerId } = await stitchIdentity(
+      const { customerId, isNew, matchedBy } = await stitchIdentity(
         admin,
         options.source,
         externalId,
         email,
-        name
+        name,
+        forceId
       );
+
+      // Track match type
+      if (forceId) {
+        matchedByEmail++; // User-forced merges count as manual match
+      } else if (matchedBy === "external_id") {
+        matchedByExternalId++;
+      } else if (matchedBy === "email") {
+        matchedByEmail++;
+      } else if (isNew && matchedBy === "name") {
+        // name_conflict — created new + flagged conflict
+        newCustomersCreated++;
+        conflictsCreated++;
+      } else if (isNew) {
+        newCustomersCreated++;
+      }
 
       // Insert into source-specific table
       const inserted = await insertSourceRow(
@@ -234,7 +397,8 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResult> {
       if (inserted) {
         importedRows++;
       } else {
-        skippedRows++; // Duplicate
+        duplicateRowsSkipped++;
+        skippedRows++;
       }
     } catch (err) {
       const message =
@@ -265,7 +429,8 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResult> {
     .eq("id", importId);
 
   // Post-import conflict detection
-  await detectPostImportConflicts(admin, importId);
+  const postConflicts = await detectPostImportConflicts(admin, importId);
+  conflictsCreated += postConflicts;
 
   return {
     importId,
@@ -274,6 +439,12 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResult> {
     skippedRows,
     errorRows,
     errors,
+    matchedByExternalId,
+    matchedByEmail,
+    newCustomersCreated,
+    duplicateRowsSkipped,
+    userSkippedRows,
+    conflictsCreated,
   };
 }
 

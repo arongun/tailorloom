@@ -69,3 +69,56 @@ export interface PreviewResult {
   validRows: number;
   errorRows: number;
 }
+
+// ─── Stitch Preview Types ──────────────────────────────────
+
+export type StitchMatchCategory =
+  | "external_id"
+  | "email"
+  | "name_conflict"
+  | "new"
+  | "duplicate";
+
+export interface StitchPreviewRow {
+  rowIndex: number;
+  externalId: string;
+  email: string | null;
+  name: string | null;
+  category: StitchMatchCategory;
+  existingCustomerId: string | null;
+  existingCustomerName: string | null;
+  existingCustomerEmail: string | null;
+  confidence: number;
+}
+
+export type StitchDecision =
+  | { action: "merge"; targetCustomerId: string }
+  | { action: "create_new" }
+  | { action: "skip" };
+
+export type StitchDecisions = Record<number, StitchDecision>;
+
+export interface StitchPreviewSummary {
+  confidentMatches: number;
+  uncertainMatches: number;
+  newCustomers: number;
+  duplicateRows: number;
+  totalValidRows: number;
+}
+
+export interface StitchPreviewResult {
+  summary: StitchPreviewSummary;
+  uncertainRows: StitchPreviewRow[];
+  confidentRows: StitchPreviewRow[];
+  newRows: StitchPreviewRow[];
+  duplicateRows: StitchPreviewRow[];
+}
+
+export interface ImportResultDetailed extends ImportResult {
+  matchedByExternalId: number;
+  matchedByEmail: number;
+  newCustomersCreated: number;
+  duplicateRowsSkipped: number;
+  userSkippedRows: number;
+  conflictsCreated: number;
+}

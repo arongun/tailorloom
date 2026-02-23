@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { SourceType } from "@/lib/types";
+import type { SourceType, StitchMatchCategory } from "@/lib/types";
 
 const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -7,6 +7,152 @@ interface StitchResult {
   customerId: string;
   isNew: boolean;
   matchedBy: "external_id" | "email" | "name" | "none";
+}
+
+export interface PreviewStitchResult {
+  category: StitchMatchCategory;
+  existingCustomerId: string | null;
+  existingCustomerName: string | null;
+  existingCustomerEmail: string | null;
+  confidence: number;
+}
+
+/**
+ * Read-only preview of the stitching cascade — same logic as stitchIdentity
+ * but performs NO database writes. Used by the verify step.
+ */
+export async function previewStitchIdentity(
+  admin: SupabaseClient,
+  source: SourceType,
+  externalId: string,
+  email: string | null,
+  name: string | null
+): Promise<PreviewStitchResult> {
+  // 1. Check external ID in customer_sources
+  if (externalId) {
+    const { data: existingSource } = await admin
+      .from("customer_sources")
+      .select("customer_id, customers(id, name, email)")
+      .eq("source", source)
+      .eq("external_id", externalId)
+      .maybeSingle();
+
+    if (existingSource) {
+      const cArr = existingSource.customers as unknown as { id: string; name: string | null; email: string | null }[] | null;
+      const c = cArr?.[0] ?? null;
+      return {
+        category: "external_id",
+        existingCustomerId: existingSource.customer_id,
+        existingCustomerName: c?.name ?? null,
+        existingCustomerEmail: c?.email ?? null,
+        confidence: 1.0,
+      };
+    }
+  }
+
+  // 2. Check email
+  if (email) {
+    const { data: customerByEmail } = await admin
+      .from("customers")
+      .select("id, name, email")
+      .eq("org_id", DEFAULT_ORG_ID)
+      .eq("email", email)
+      .maybeSingle();
+
+    if (customerByEmail) {
+      return {
+        category: "email",
+        existingCustomerId: customerByEmail.id,
+        existingCustomerName: customerByEmail.name,
+        existingCustomerEmail: customerByEmail.email,
+        confidence: 0.95,
+      };
+    }
+
+    const { data: sourceByEmail } = await admin
+      .from("customer_sources")
+      .select("customer_id, customers(id, name, email)")
+      .eq("external_email", email)
+      .limit(1)
+      .maybeSingle();
+
+    if (sourceByEmail) {
+      const cArr = sourceByEmail.customers as unknown as { id: string; name: string | null; email: string | null }[] | null;
+      const c = cArr?.[0] ?? null;
+      return {
+        category: "email",
+        existingCustomerId: sourceByEmail.customer_id,
+        existingCustomerName: c?.name ?? null,
+        existingCustomerEmail: c?.email ?? null,
+        confidence: 0.9,
+      };
+    }
+  }
+
+  // 3. Name match — flag as uncertain if different email
+  if (name) {
+    const { data: customersByName } = await admin
+      .from("customers")
+      .select("id, email, name")
+      .eq("org_id", DEFAULT_ORG_ID)
+      .ilike("name", name)
+      .limit(5);
+
+    if (customersByName && customersByName.length === 1) {
+      const existing = customersByName[0];
+      if (existing.email && email && existing.email !== email) {
+        return {
+          category: "name_conflict",
+          existingCustomerId: existing.id,
+          existingCustomerName: existing.name,
+          existingCustomerEmail: existing.email,
+          confidence: 0.6,
+        };
+      }
+    }
+  }
+
+  // 4. No match — new customer
+  return {
+    category: "new",
+    existingCustomerId: null,
+    existingCustomerName: null,
+    existingCustomerEmail: null,
+    confidence: 0,
+  };
+}
+
+/**
+ * Check if a row already exists in the source-specific table.
+ * Returns true if a record with this external ID + source already exists.
+ */
+export async function checkDuplicateRow(
+  admin: SupabaseClient,
+  source: SourceType,
+  externalId: string
+): Promise<boolean> {
+  const table =
+    source === "stripe"
+      ? "payments"
+      : source === "calendly"
+        ? "bookings"
+        : "attendance";
+
+  const idColumn =
+    source === "stripe"
+      ? "stripe_payment_id"
+      : source === "calendly"
+        ? "calendly_event_id"
+        : "passline_id";
+
+  const { data } = await admin
+    .from(table)
+    .select("id")
+    .eq(idColumn, externalId)
+    .limit(1)
+    .maybeSingle();
+
+  return data !== null;
 }
 
 /**
@@ -17,14 +163,35 @@ interface StitchResult {
  * 2. Email — match customers by email OR customer_sources by external_email
  * 3. Name — if name matches but email differs, flag conflict (don't auto-merge)
  * 4. No match — create new customer
+ *
+ * When `forceCustomerId` is set, skip cascade and link directly to that customer.
+ * Used when user explicitly picks "merge" for an uncertain match in the verify step.
  */
 export async function stitchIdentity(
   admin: SupabaseClient,
   source: SourceType,
   externalId: string,
   email: string | null,
-  name: string | null
+  name: string | null,
+  forceCustomerId?: string
 ): Promise<StitchResult> {
+  // If user explicitly chose to merge into a specific customer, skip cascade
+  if (forceCustomerId) {
+    await linkSourceToCustomer(
+      admin,
+      forceCustomerId,
+      source,
+      externalId,
+      email,
+      name
+    );
+    return {
+      customerId: forceCustomerId,
+      isNew: false,
+      matchedBy: "name",
+    };
+  }
+
   // 1. Check external ID in customer_sources
   if (externalId) {
     const { data: existingSource } = await admin

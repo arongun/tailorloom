@@ -9,6 +9,13 @@ import {
   SkipForward,
   FileText,
   Loader2,
+  ArrowLeft,
+  ArrowRight,
+  Link2,
+  Mail,
+  UserPlus,
+  Copy,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -16,26 +23,30 @@ import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 
 import { UploadMapper } from "./components/upload-mapper";
+import { StitchPreview } from "./components/stitch-preview";
 
-import { previewCSV, uploadCSV } from "@/lib/actions/import";
+import { previewCSV, uploadCSV, previewStitching } from "@/lib/actions/import";
 import { saveMappingTemplate } from "@/lib/actions/mappings";
 
 import type {
   SourceType,
-  ImportResult,
+  ImportResultDetailed,
+  StitchPreviewResult,
+  StitchDecisions,
 } from "@/lib/types";
 
-type Step = 1 | 2;
+type Step = 1 | 2 | 3;
 
 const STEP_LABELS: Record<Step, string> = {
   1: "Upload & Map",
-  2: "Import",
+  2: "Verify",
+  3: "Import",
 };
 
 export default function UploadPage() {
   const [step, setStep] = useState<Step>(1);
 
-  // Step 1 — data from UploadMapper (includes auto-detected source)
+  // Step 1 — data from UploadMapper
   const mapperData = useRef<{
     source: SourceType;
     file: File;
@@ -45,10 +56,16 @@ export default function UploadPage() {
     totalRows: number;
   } | null>(null);
 
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
-  // Step 2
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  // Step 2 — stitch preview
+  const [stitchPreview, setStitchPreviewResult] =
+    useState<StitchPreviewResult | null>(null);
+  const [stitchDecisions, setStitchDecisions] = useState<StitchDecisions>({});
+
+  // Step 3
+  const [importResult, setImportResult] =
+    useState<ImportResultDetailed | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
   // ─── Handlers ──────────────────────────────────────────
@@ -90,13 +107,14 @@ export default function UploadPage() {
     []
   );
 
-  const handleValidateAndImport = async () => {
+  /** Step 1 → Step 2: validate CSV then run stitch preview */
+  const handleContinueToVerify = async () => {
     const data = mapperData.current;
     if (!data) return;
 
-    // Validate via preview
-    setPreviewLoading(true);
+    setIsVerifying(true);
     try {
+      // Validate via preview
       const result = await previewCSV({
         source: data.source,
         content: data.content,
@@ -104,20 +122,50 @@ export default function UploadPage() {
       });
       if (result.preview.validRows === 0) {
         toast.error("No valid rows to import. Check your column mapping.");
-        setPreviewLoading(false);
+        setIsVerifying(false);
         return;
       }
 
-      // Proceed to import
-      setStep(2);
-      setPreviewLoading(false);
-      setIsImporting(true);
+      // Run stitch preview
+      const stitchResult = await previewStitching({
+        source: data.source,
+        content: data.content,
+        mapping: data.mapping,
+      });
 
+      // Initialize default decisions: all uncertain rows → "create_new"
+      const defaults: StitchDecisions = {};
+      for (const row of stitchResult.uncertainRows) {
+        defaults[row.rowIndex] = { action: "create_new" };
+      }
+
+      setStitchPreviewResult(stitchResult);
+      setStitchDecisions(defaults);
+      setStep(2);
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to verify data"
+      );
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  /** Step 2 → Step 3: run import with decisions */
+  const handleImport = async () => {
+    const data = mapperData.current;
+    if (!data) return;
+
+    setStep(3);
+    setIsImporting(true);
+
+    try {
       const importRes = await uploadCSV({
         source: data.source,
         fileName: data.file.name,
         content: data.content,
         mapping: data.mapping,
+        stitchDecisions,
       });
       setImportResult(importRes);
 
@@ -130,26 +178,27 @@ export default function UploadPage() {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Import failed");
-      // If we already moved to step 2, show error result
-      if (step === 2) {
-        setImportResult({
-          importId: "",
-          totalRows: data.totalRows,
-          importedRows: 0,
-          skippedRows: 0,
-          errorRows: data.totalRows,
-          errors: [
-            {
-              row: 0,
-              field: "",
-              message:
-                err instanceof Error ? err.message : "Import failed",
-            },
-          ],
-        });
-      }
+      setImportResult({
+        importId: "",
+        totalRows: data.totalRows,
+        importedRows: 0,
+        skippedRows: 0,
+        errorRows: data.totalRows,
+        errors: [
+          {
+            row: 0,
+            field: "",
+            message: err instanceof Error ? err.message : "Import failed",
+          },
+        ],
+        matchedByExternalId: 0,
+        matchedByEmail: 0,
+        newCustomersCreated: 0,
+        duplicateRowsSkipped: 0,
+        userSkippedRows: 0,
+        conflictsCreated: 0,
+      });
     } finally {
-      setPreviewLoading(false);
       setIsImporting(false);
     }
   };
@@ -157,13 +206,16 @@ export default function UploadPage() {
   const handleStartOver = () => {
     setStep(1);
     mapperData.current = null;
+    setStitchPreviewResult(null);
+    setStitchDecisions({});
     setImportResult(null);
   };
 
-  // ─── Navigation ────────────────────────────────────────
-
-  const canImport = () => {
-    return !!mapperData.current && Object.keys(mapperData.current.mapping).length > 0;
+  const canContinue = () => {
+    return (
+      !!mapperData.current &&
+      Object.keys(mapperData.current.mapping).length > 0
+    );
   };
 
   // ─── Render ────────────────────────────────────────────
@@ -183,7 +235,7 @@ export default function UploadPage() {
       {/* Step indicator */}
       <div className="mb-8 animate-fade-in-up stagger-2">
         <div className="flex items-center gap-1">
-          {([1, 2] as Step[]).map((s) => (
+          {([1, 2, 3] as Step[]).map((s) => (
             <div key={s} className="flex items-center">
               <div
                 className={cn(
@@ -195,7 +247,11 @@ export default function UploadPage() {
                       : "bg-slate-100 text-slate-400"
                 )}
               >
-                {s}
+                {s < step ? (
+                  <CheckCircle2 className="h-4 w-4" />
+                ) : (
+                  s
+                )}
               </div>
               <span
                 className={cn(
@@ -209,7 +265,7 @@ export default function UploadPage() {
               >
                 {STEP_LABELS[s]}
               </span>
-              {s < 2 && (
+              {s < 3 && (
                 <div
                   className={cn(
                     "mx-4 h-px w-10",
@@ -227,7 +283,8 @@ export default function UploadPage() {
         {step === 1 && (
           <div className="space-y-4">
             <p className="text-[13px] text-slate-500 mb-4">
-              Upload a CSV export — the source type is auto-detected from the column headers
+              Upload a CSV export — the source type is auto-detected from the
+              column headers
             </p>
             <UploadMapper
               onReady={handleMapperReady}
@@ -237,8 +294,22 @@ export default function UploadPage() {
           </div>
         )}
 
-        {step === 2 && (
-          <ImportResultView
+        {step === 2 && stitchPreview && (
+          <div className="space-y-4">
+            <p className="text-[13px] text-slate-500 mb-4">
+              Review how rows will be matched to existing customers before
+              importing
+            </p>
+            <StitchPreview
+              result={stitchPreview}
+              decisions={stitchDecisions}
+              onDecisionsChange={setStitchDecisions}
+            />
+          </div>
+        )}
+
+        {step === 3 && (
+          <DetailedImportResultView
             result={importResult}
             isImporting={isImporting}
           />
@@ -248,7 +319,17 @@ export default function UploadPage() {
       {/* Navigation */}
       <div className="mt-8 flex items-center justify-between animate-fade-in-up stagger-4">
         <div>
-          {step === 2 && !isImporting && (
+          {step === 2 && (
+            <Button
+              variant="ghost"
+              onClick={() => setStep(1)}
+              className="text-[13px] text-slate-500 hover:text-slate-700"
+            >
+              <ArrowLeft className="mr-1.5 h-4 w-4" />
+              Back
+            </Button>
+          )}
+          {step === 3 && !isImporting && (
             <Button
               variant="ghost"
               onClick={handleStartOver}
@@ -262,18 +343,27 @@ export default function UploadPage() {
         <div>
           {step === 1 && (
             <Button
-              onClick={handleValidateAndImport}
-              disabled={!canImport() || previewLoading}
+              onClick={handleContinueToVerify}
+              disabled={!canContinue() || isVerifying}
               className="text-[13px]"
             >
-              {previewLoading ? (
-                "Validating..."
+              {isVerifying ? (
+                <>
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  Verifying...
+                </>
               ) : (
                 <>
-                  <Upload className="mr-1.5 h-4 w-4" />
-                  Import data
+                  Continue
+                  <ArrowRight className="ml-1.5 h-4 w-4" />
                 </>
               )}
+            </Button>
+          )}
+          {step === 2 && (
+            <Button onClick={handleImport} className="text-[13px]">
+              <Upload className="mr-1.5 h-4 w-4" />
+              Import data
             </Button>
           )}
         </div>
@@ -282,13 +372,13 @@ export default function UploadPage() {
   );
 }
 
-// ─── Import result sub-component ─────────────────────────
+// ─── Detailed Import Result (Step 3) ────────────────────
 
-function ImportResultView({
+function DetailedImportResultView({
   result,
   isImporting,
 }: {
-  result: ImportResult | null;
+  result: ImportResultDetailed | null;
   isImporting: boolean;
 }) {
   if (isImporting) {
@@ -301,7 +391,7 @@ function ImportResultView({
           Importing data...
         </p>
         <p className="mt-1 text-[12px] text-slate-400">
-          Mapping columns, stitching identities, and writing records
+          Stitching identities, writing records, detecting conflicts
         </p>
         <div className="mt-6 w-64">
           <Progress value={66} className="h-1.5" />
@@ -328,7 +418,8 @@ function ImportResultView({
               Import complete
             </p>
             <p className="mt-1 text-[13px] text-slate-500">
-              All {result.importedRows} rows imported successfully
+              {result.importedRows} of {result.totalRows} rows imported
+              successfully
             </p>
           </>
         ) : isPartial ? (
@@ -359,39 +450,67 @@ function ImportResultView({
         )}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-3">
-        <StatCard
-          label="Total"
-          value={result.totalRows}
-          icon={<FileText className="h-4 w-4 text-slate-500" />}
-          color="bg-white border-slate-200"
-        />
-        <StatCard
-          label="Imported"
-          value={result.importedRows}
-          icon={<CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-          color="bg-emerald-50/50 border-emerald-200"
-        />
-        <StatCard
-          label="Skipped"
-          value={result.skippedRows}
-          icon={<SkipForward className="h-4 w-4 text-slate-400" />}
-          color="bg-white border-slate-200"
-        />
-        <StatCard
-          label="Errors"
-          value={result.errorRows}
-          icon={<XCircle className="h-4 w-4 text-rose-500" />}
-          color={
-            result.errorRows > 0
-              ? "bg-rose-50/50 border-rose-200"
-              : "bg-white border-slate-200"
-          }
-        />
+      {/* Detailed breakdown */}
+      <div className="rounded-xl border border-slate-200 overflow-hidden">
+        <div className="border-b border-slate-100 px-5 py-3">
+          <p className="text-[13px] font-medium text-slate-700">
+            Import breakdown
+          </p>
+        </div>
+        <div className="divide-y divide-slate-100">
+          <BreakdownRow
+            icon={<Link2 className="h-4 w-4 text-emerald-500" />}
+            label="Matched by External ID"
+            value={result.matchedByExternalId}
+          />
+          <BreakdownRow
+            icon={<Mail className="h-4 w-4 text-blue-500" />}
+            label="Matched by Email"
+            value={result.matchedByEmail}
+          />
+          <BreakdownRow
+            icon={<UserPlus className="h-4 w-4 text-violet-500" />}
+            label="New Customers Created"
+            value={result.newCustomersCreated}
+          />
+          <BreakdownRow
+            icon={<Copy className="h-4 w-4 text-slate-400" />}
+            label="Duplicate Rows Skipped"
+            value={result.duplicateRowsSkipped}
+          />
+          {result.userSkippedRows > 0 && (
+            <BreakdownRow
+              icon={<SkipForward className="h-4 w-4 text-slate-400" />}
+              label="User Skipped"
+              value={result.userSkippedRows}
+            />
+          )}
+          {result.conflictsCreated > 0 && (
+            <BreakdownRow
+              icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
+              label="Conflicts Flagged"
+              value={result.conflictsCreated}
+            />
+          )}
+          {result.errorRows > 0 && (
+            <BreakdownRow
+              icon={<XCircle className="h-4 w-4 text-rose-500" />}
+              label="Errors"
+              value={result.errorRows}
+            />
+          )}
+          <div className="flex items-center justify-between px-5 py-3 bg-slate-50/50">
+            <span className="text-[13px] font-medium text-slate-900">
+              Total Imported
+            </span>
+            <span className="text-[13px] font-semibold text-slate-900 tabular-nums">
+              {result.importedRows} / {result.totalRows}
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* Errors */}
+      {/* Errors list */}
       {result.errors.length > 0 && (
         <div className="rounded-xl border border-rose-200 bg-rose-50/30 overflow-hidden">
           <div className="border-b border-rose-100 px-5 py-3">
@@ -412,7 +531,7 @@ function ImportResultView({
                       &middot; {err.field}
                     </span>
                   )}
-                  <span className="mx-1.5 text-rose-300">—</span>
+                  <span className="mx-1.5 text-rose-300">&mdash;</span>
                   {err.message}
                 </p>
               </div>
@@ -424,24 +543,24 @@ function ImportResultView({
   );
 }
 
-function StatCard({
+function BreakdownRow({
+  icon,
   label,
   value,
-  icon,
-  color,
 }: {
+  icon: React.ReactNode;
   label: string;
   value: number;
-  icon: React.ReactNode;
-  color: string;
 }) {
   return (
-    <div className={`rounded-lg border p-4 ${color}`}>
-      <div className="flex items-center gap-2 mb-2">{icon}</div>
-      <p className="text-[18px] font-semibold text-slate-900 tabular-nums">
+    <div className="flex items-center justify-between px-5 py-2.5">
+      <div className="flex items-center gap-2.5">
+        {icon}
+        <span className="text-[13px] text-slate-600">{label}</span>
+      </div>
+      <span className="text-[13px] font-medium text-slate-900 tabular-nums">
         {value}
-      </p>
-      <p className="text-[11px] text-slate-500 mt-0.5">{label}</p>
+      </span>
     </div>
   );
 }

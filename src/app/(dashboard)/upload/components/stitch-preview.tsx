@@ -1,0 +1,432 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Link2,
+  UserPlus,
+  Copy,
+  ChevronDown,
+  ChevronRight,
+  Check,
+  Plus,
+  SkipForward,
+  AlertTriangle,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import type {
+  StitchPreviewResult,
+  StitchPreviewRow,
+  StitchDecisions,
+  StitchDecision,
+} from "@/lib/types";
+
+// ─── Types ──────────────────────────────────────────────────
+
+interface StitchPreviewProps {
+  result: StitchPreviewResult;
+  decisions: StitchDecisions;
+  onDecisionsChange: (decisions: StitchDecisions) => void;
+}
+
+// ─── Component ──────────────────────────────────────────────
+
+export function StitchPreview({
+  result,
+  decisions,
+  onDecisionsChange,
+}: StitchPreviewProps) {
+  const { summary } = result;
+
+  const setDecision = (rowIndex: number, decision: StitchDecision) => {
+    onDecisionsChange({ ...decisions, [rowIndex]: decision });
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Summary cards */}
+      <div className="grid grid-cols-4 gap-3">
+        <SummaryCard
+          label="Confident Matches"
+          value={summary.confidentMatches}
+          icon={<Link2 className="h-4 w-4 text-emerald-500" />}
+          color="bg-emerald-50/50 border-emerald-200"
+          description="Matched by ID or email"
+        />
+        <SummaryCard
+          label="Needs Review"
+          value={summary.uncertainMatches}
+          icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
+          color={
+            summary.uncertainMatches > 0
+              ? "bg-amber-50/50 border-amber-200"
+              : "bg-white border-slate-200"
+          }
+          description="Name match, different email"
+        />
+        <SummaryCard
+          label="New Customers"
+          value={summary.newCustomers}
+          icon={<UserPlus className="h-4 w-4 text-blue-500" />}
+          color="bg-blue-50/50 border-blue-200"
+          description="Will be created"
+        />
+        <SummaryCard
+          label="Duplicates"
+          value={summary.duplicateRows}
+          icon={<Copy className="h-4 w-4 text-slate-400" />}
+          color="bg-white border-slate-200"
+          description="Already imported, skipped"
+        />
+      </div>
+
+      {/* Uncertain matches — user must decide */}
+      {result.uncertainRows.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/20 overflow-hidden">
+          <div className="border-b border-amber-100 px-5 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+              <p className="text-[13px] font-medium text-amber-800">
+                Review required — {result.uncertainRows.length} uncertain{" "}
+                {result.uncertainRows.length === 1 ? "match" : "matches"}
+              </p>
+            </div>
+            <p className="text-[11px] text-amber-600">
+              Same name found with a different email
+            </p>
+          </div>
+          <div className="divide-y divide-amber-100">
+            {result.uncertainRows.map((row) => (
+              <UncertainMatchRow
+                key={row.rowIndex}
+                row={row}
+                decision={
+                  decisions[row.rowIndex] ?? { action: "create_new" }
+                }
+                onDecisionChange={(d) => setDecision(row.rowIndex, d)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Confident matches — collapsible */}
+      {result.confidentRows.length > 0 && (
+        <CollapsibleSection
+          title="Confident Matches"
+          count={summary.confidentMatches}
+          sampleCount={result.confidentRows.length}
+          color="emerald"
+        >
+          {result.confidentRows.map((row) => (
+            <div
+              key={row.rowIndex}
+              className="flex items-center gap-4 px-5 py-2.5 text-[12px]"
+            >
+              <span className="font-mono text-slate-400 w-12">
+                Row {row.rowIndex}
+              </span>
+              <span className="text-slate-700 min-w-[140px] truncate">
+                {row.name ?? "—"}
+              </span>
+              <span className="text-slate-500 min-w-[180px] truncate">
+                {row.email ?? "—"}
+              </span>
+              <span className="text-slate-300 mx-1">&rarr;</span>
+              <span className="text-emerald-600 truncate">
+                {row.existingCustomerName ?? row.existingCustomerEmail ?? "—"}
+              </span>
+              <MatchBadge category={row.category} />
+            </div>
+          ))}
+        </CollapsibleSection>
+      )}
+
+      {/* New customers — collapsible */}
+      {result.newRows.length > 0 && (
+        <CollapsibleSection
+          title="New Customers"
+          count={summary.newCustomers}
+          sampleCount={result.newRows.length}
+          color="blue"
+        >
+          {result.newRows.map((row) => (
+            <div
+              key={row.rowIndex}
+              className="flex items-center gap-4 px-5 py-2.5 text-[12px]"
+            >
+              <span className="font-mono text-slate-400 w-12">
+                Row {row.rowIndex}
+              </span>
+              <span className="text-slate-700 min-w-[140px] truncate">
+                {row.name ?? "—"}
+              </span>
+              <span className="text-slate-500 truncate">
+                {row.email ?? "—"}
+              </span>
+            </div>
+          ))}
+        </CollapsibleSection>
+      )}
+
+      {/* Duplicates — collapsible */}
+      {result.duplicateRows.length > 0 && (
+        <CollapsibleSection
+          title="Duplicate Rows"
+          count={summary.duplicateRows}
+          sampleCount={result.duplicateRows.length}
+          color="slate"
+        >
+          {result.duplicateRows.map((row) => (
+            <div
+              key={row.rowIndex}
+              className="flex items-center gap-4 px-5 py-2.5 text-[12px]"
+            >
+              <span className="font-mono text-slate-400 w-12">
+                Row {row.rowIndex}
+              </span>
+              <span className="text-slate-700 min-w-[140px] truncate">
+                {row.name ?? "—"}
+              </span>
+              <span className="text-slate-500 truncate">
+                {row.externalId}
+              </span>
+              <span className="text-slate-400 text-[11px]">
+                already imported
+              </span>
+            </div>
+          ))}
+        </CollapsibleSection>
+      )}
+    </div>
+  );
+}
+
+// ─── Sub-components ─────────────────────────────────────────
+
+function SummaryCard({
+  label,
+  value,
+  icon,
+  color,
+  description,
+}: {
+  label: string;
+  value: number;
+  icon: React.ReactNode;
+  color: string;
+  description: string;
+}) {
+  return (
+    <div className={`rounded-lg border p-4 ${color}`}>
+      <div className="flex items-center gap-2 mb-2">{icon}</div>
+      <p className="text-[18px] font-semibold text-slate-900 tabular-nums">
+        {value}
+      </p>
+      <p className="text-[11px] text-slate-500 mt-0.5">{label}</p>
+      <p className="text-[10px] text-slate-400 mt-0.5">{description}</p>
+    </div>
+  );
+}
+
+function UncertainMatchRow({
+  row,
+  decision,
+  onDecisionChange,
+}: {
+  row: StitchPreviewRow;
+  decision: StitchDecision;
+  onDecisionChange: (d: StitchDecision) => void;
+}) {
+  return (
+    <div className="px-5 py-4 flex items-start gap-4">
+      {/* CSV row info */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="font-mono text-[11px] text-amber-500">
+            Row {row.rowIndex}
+          </span>
+        </div>
+        <p className="text-[13px] font-medium text-slate-800 truncate">
+          {row.name ?? "—"}
+        </p>
+        <p className="text-[12px] text-slate-500 truncate">
+          {row.email ?? "No email"}
+        </p>
+      </div>
+
+      {/* Arrow */}
+      <div className="flex items-center pt-4 text-slate-300">
+        <span className="text-[12px]">&harr;</span>
+      </div>
+
+      {/* Existing customer */}
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px] text-slate-400 mb-1">Existing customer</p>
+        <p className="text-[13px] font-medium text-slate-800 truncate">
+          {row.existingCustomerName ?? "—"}
+        </p>
+        <p className="text-[12px] text-slate-500 truncate">
+          {row.existingCustomerEmail ?? "No email"}
+        </p>
+      </div>
+
+      {/* Decision buttons */}
+      <div className="flex items-center gap-1.5 pt-2 shrink-0">
+        <DecisionButton
+          active={
+            decision.action === "merge" &&
+            decision.targetCustomerId === row.existingCustomerId
+          }
+          onClick={() =>
+            onDecisionChange({
+              action: "merge",
+              targetCustomerId: row.existingCustomerId!,
+            })
+          }
+          icon={<Check className="h-3.5 w-3.5" />}
+          label="Merge"
+          activeColor="bg-emerald-100 text-emerald-700 border-emerald-300"
+        />
+        <DecisionButton
+          active={decision.action === "create_new"}
+          onClick={() => onDecisionChange({ action: "create_new" })}
+          icon={<Plus className="h-3.5 w-3.5" />}
+          label="New"
+          activeColor="bg-blue-100 text-blue-700 border-blue-300"
+        />
+        <DecisionButton
+          active={decision.action === "skip"}
+          onClick={() => onDecisionChange({ action: "skip" })}
+          icon={<SkipForward className="h-3.5 w-3.5" />}
+          label="Skip"
+          activeColor="bg-slate-200 text-slate-700 border-slate-300"
+        />
+      </div>
+    </div>
+  );
+}
+
+function DecisionButton({
+  active,
+  onClick,
+  icon,
+  label,
+  activeColor,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  activeColor: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition-all",
+        active
+          ? activeColor
+          : "bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function MatchBadge({ category }: { category: string }) {
+  const config: Record<string, { label: string; color: string }> = {
+    external_id: { label: "ID", color: "bg-emerald-100 text-emerald-700" },
+    email: { label: "Email", color: "bg-blue-100 text-blue-700" },
+    name_conflict: { label: "Name", color: "bg-amber-100 text-amber-700" },
+    new: { label: "New", color: "bg-slate-100 text-slate-600" },
+    duplicate: { label: "Dup", color: "bg-slate-100 text-slate-500" },
+  };
+
+  const c = config[category] ?? config.new;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium",
+        c.color
+      )}
+    >
+      {c.label}
+    </span>
+  );
+}
+
+function CollapsibleSection({
+  title,
+  count,
+  sampleCount,
+  color,
+  children,
+}: {
+  title: string;
+  count: number;
+  sampleCount: number;
+  color: "emerald" | "blue" | "slate";
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const borderColor =
+    color === "emerald"
+      ? "border-emerald-200"
+      : color === "blue"
+        ? "border-blue-200"
+        : "border-slate-200";
+
+  const headerBg =
+    color === "emerald"
+      ? "bg-emerald-50/30"
+      : color === "blue"
+        ? "bg-blue-50/30"
+        : "bg-slate-50/30";
+
+  return (
+    <div className={cn("rounded-xl border overflow-hidden", borderColor)}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "w-full flex items-center justify-between px-5 py-3 text-left transition-colors hover:bg-slate-50/50",
+          headerBg
+        )}
+      >
+        <p className="text-[13px] font-medium text-slate-700">
+          {title}{" "}
+          <span className="text-slate-400 font-normal">({count})</span>
+        </p>
+        <div className="flex items-center gap-2">
+          {!open && count > sampleCount && (
+            <span className="text-[11px] text-slate-400">
+              showing {sampleCount} of {count}
+            </span>
+          )}
+          {open ? (
+            <ChevronDown className="h-4 w-4 text-slate-400" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-slate-400" />
+          )}
+        </div>
+      </button>
+      {open && (
+        <div className="divide-y divide-slate-100 border-t border-slate-100">
+          {children}
+          {count > sampleCount && (
+            <div className="px-5 py-2 text-center">
+              <p className="text-[11px] text-slate-400">
+                Showing {sampleCount} of {count} rows
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
