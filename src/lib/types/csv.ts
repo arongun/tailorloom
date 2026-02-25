@@ -77,26 +77,48 @@ export interface PreviewResult {
 export type StitchMatchCategory =
   | "external_id"
   | "email"
+  | "phone"
+  | "name_match"
   | "name_conflict"
+  | "enrichment"
   | "new"
   | "duplicate";
+
+export interface StitchCandidate {
+  customerId: string;
+  customerName: string | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
+  matchedBy: "phone" | "name";
+  confidence: number;
+}
+
+export interface EnrichableField {
+  field: "full_name" | "email" | "phone";
+  existingValue: null;
+  newValue: string;
+}
 
 export interface StitchPreviewRow {
   rowIndex: number;
   externalId: string;
   email: string | null;
   name: string | null;
+  phone: string | null;
   category: StitchMatchCategory;
   existingCustomerId: string | null;
   existingCustomerName: string | null;
   existingCustomerEmail: string | null;
   confidence: number;
+  candidates: StitchCandidate[];
+  enrichableFields: EnrichableField[];
 }
 
 export type StitchDecision =
   | { action: "merge"; targetCustomerId: string }
   | { action: "create_new" }
-  | { action: "skip" };
+  | { action: "skip" }
+  | { action: "accept_enrichment"; targetCustomerId: string };
 
 export type StitchDecisions = Record<number, StitchDecision>;
 
@@ -105,6 +127,7 @@ export interface StitchPreviewSummary {
   uncertainMatches: number;
   newCustomers: number;
   duplicateRows: number;
+  enrichments: number;
   totalValidRows: number;
 }
 
@@ -114,13 +137,16 @@ export interface StitchPreviewResult {
   confidentRows: StitchPreviewRow[];
   newRows: StitchPreviewRow[];
   duplicateRows: StitchPreviewRow[];
+  enrichmentRows: StitchPreviewRow[];
 }
 
 export interface ImportResultDetailed extends ImportResult {
   matchedByExternalId: number;
   matchedByEmail: number;
+  matchedByPhone: number;
   newCustomersCreated: number;
   duplicateRowsSkipped: number;
   userSkippedRows: number;
   conflictsCreated: number;
+  enrichedCount: number;
 }

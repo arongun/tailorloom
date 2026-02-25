@@ -468,7 +468,30 @@ export async function getCustomersWithMetrics(
   });
 }
 
-// ─── 6. getCustomerDetail ─────────────────────────────────
+// ─── 6. searchCustomers ───────────────────────────────────
+
+export async function searchCustomers(
+  query: string
+): Promise<{ id: string; full_name: string | null; email: string | null; phone: string | null }[]> {
+  await requireAuth();
+  const admin = createAdminClient();
+
+  const q = query.trim();
+  if (!q) return [];
+
+  const pattern = `%${q}%`;
+
+  const { data } = await admin
+    .from("customers")
+    .select("id, full_name, email, phone")
+    .eq("org_id", DEFAULT_ORG_ID)
+    .or(`full_name.ilike.${pattern},email.ilike.${pattern},phone.ilike.${pattern}`)
+    .limit(10);
+
+  return data ?? [];
+}
+
+// ─── 7. getCustomerDetail ─────────────────────────────────
 
 export async function getCustomerDetail(
   customerId: string

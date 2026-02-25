@@ -200,6 +200,8 @@ export default function UploadPage() {
         duplicateRowsSkipped: 0,
         userSkippedRows: 0,
         conflictsCreated: 0,
+        matchedByPhone: 0,
+        enrichedCount: 0,
       });
     } finally {
       setIsImporting(false);

@@ -7,10 +7,6 @@ import {
   ArrowUp,
   ArrowDown,
   X,
-  Loader2,
-  CreditCard,
-  Calendar,
-  UserCheck,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -30,16 +26,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { getCustomerDetail } from "@/lib/actions/dashboard";
-import type { CustomerRow, CustomerDetail } from "@/lib/actions/dashboard";
+import { Card } from "@/components/ui/card";
+import { CustomerDetailSheet } from "@/components/customer-detail-sheet";
+import type { CustomerRow } from "@/lib/actions/dashboard";
 
 type SortKey = "full_name" | "totalRevenue" | "purchaseCount" | "lastActivityDate";
 type SortDir = "asc" | "desc";
@@ -53,12 +42,6 @@ const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
   manual: { label: "Manual", color: "bg-surface-muted text-text-secondary" },
 };
 
-const TRANSACTION_ICONS: Record<string, typeof CreditCard> = {
-  payment: CreditCard,
-  booking: Calendar,
-  attendance: UserCheck,
-};
-
 interface CustomersClientProps {
   customers: CustomerRow[];
 }
@@ -69,11 +52,8 @@ export function CustomersClient({ customers }: CustomersClientProps) {
   const [segmentFilter, setSegmentFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<SortKey>("totalRevenue");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [selectedDetail, setSelectedDetail] = useState<CustomerDetail | null>(
-    null
-  );
+  const [sheetCustomerId, setSheetCustomerId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [loadingDetail, setLoadingDetail] = useState(false);
 
   const filtered = useMemo(() => {
     let result = [...customers];
@@ -128,18 +108,9 @@ export function CustomersClient({ customers }: CustomersClientProps) {
     }
   };
 
-  const handleRowClick = async (customerId: string) => {
+  const handleRowClick = (customerId: string) => {
+    setSheetCustomerId(customerId);
     setSheetOpen(true);
-    setLoadingDetail(true);
-    setSelectedDetail(null);
-    try {
-      const detail = await getCustomerDetail(customerId);
-      setSelectedDetail(detail);
-    } catch {
-      // Leave detail null on error
-    } finally {
-      setLoadingDetail(false);
-    }
   };
 
   const SortIcon = ({ columnKey }: { columnKey: SortKey }) => {
@@ -378,152 +349,11 @@ export function CustomersClient({ customers }: CustomersClientProps) {
       </Card>
 
       {/* Customer Detail Sheet */}
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent className="w-[480px] sm:w-[540px] overflow-y-auto">
-          {loadingDetail && (
-            <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-6 w-6 text-text-muted animate-spin" />
-            </div>
-          )}
-          {!loadingDetail && selectedDetail && (
-            <div className="px-6 pb-6">
-              <SheetHeader className="pb-4 px-0">
-                <SheetTitle className="text-lg font-semibold text-text-primary">
-                  {selectedDetail.customer.full_name || "Unknown Customer"}
-                </SheetTitle>
-                <p className="text-[12px] text-text-muted">
-                  {selectedDetail.customer.email || "No email"}
-                </p>
-                {selectedDetail.customer.sources.length > 0 && (
-                  <div className="flex items-center gap-1.5 mt-2">
-                    {selectedDetail.customer.sources.map((s) => {
-                      const info = SOURCE_LABELS[s] ?? {
-                        label: s,
-                        color: "bg-surface-muted text-text-secondary",
-                      };
-                      return (
-                        <Badge
-                          key={s}
-                          variant="secondary"
-                          className={`text-[10px] font-medium px-1.5 py-0 ${info.color}`}
-                        >
-                          {info.label}
-                        </Badge>
-                      );
-                    })}
-                  </div>
-                )}
-              </SheetHeader>
-
-              <div className="grid grid-cols-3 gap-3 mb-6">
-                <Card className="border-border-default shadow-none">
-                  <CardContent className="p-3">
-                    <p className="text-[10px] font-medium tracking-wide text-text-muted uppercase mb-1">
-                      Revenue
-                    </p>
-                    <p className="text-[16px] font-semibold text-text-primary tabular-nums">
-                      ${selectedDetail.customer.totalRevenue.toLocaleString()}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="border-border-default shadow-none">
-                  <CardContent className="p-3">
-                    <p className="text-[10px] font-medium tracking-wide text-text-muted uppercase mb-1">
-                      Purchases
-                    </p>
-                    <p className="text-[16px] font-semibold text-text-primary tabular-nums">
-                      {selectedDetail.customer.purchaseCount}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card className="border-border-default shadow-none">
-                  <CardContent className="p-3">
-                    <p className="text-[10px] font-medium tracking-wide text-text-muted uppercase mb-1">
-                      Status
-                    </p>
-                    <div className="mt-0.5">
-                      {statusBadge(selectedDetail.customer.status)}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <Separator className="mb-6" />
-
-              <div>
-                <h3 className="text-[13px] font-semibold text-text-primary mb-4">
-                  Activity History
-                </h3>
-                <div className="space-y-3">
-                  {selectedDetail.transactions.map((tx) => {
-                    const Icon =
-                      TRANSACTION_ICONS[tx.type] ?? CreditCard;
-                    const sourceInfo = SOURCE_LABELS[tx.source] ?? {
-                      label: tx.source,
-                      color: "bg-surface-muted text-text-secondary",
-                    };
-                    return (
-                      <div
-                        key={tx.id}
-                        className="flex items-start justify-between rounded-lg border border-border-muted p-3"
-                      >
-                        <div className="flex items-start gap-3 flex-1 min-w-0">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-surface-elevated mt-0.5">
-                            <Icon className="h-3.5 w-3.5 text-text-muted" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[13px] font-medium text-text-primary truncate">
-                              {tx.description}
-                            </p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <Badge
-                                variant="secondary"
-                                className={`text-[10px] font-medium px-1.5 py-0 ${sourceInfo.color}`}
-                              >
-                                {sourceInfo.label}
-                              </Badge>
-                              <span className="text-[11px] text-text-muted">
-                                {new Date(tx.date).toLocaleDateString(
-                                  "en-US",
-                                  {
-                                    month: "short",
-                                    day: "numeric",
-                                    year: "numeric",
-                                  }
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                        {tx.amount !== null && (
-                          <p className="text-[14px] font-semibold text-text-primary tabular-nums ml-4">
-                            $
-                            {tx.amount.toLocaleString("en-US", {
-                              minimumFractionDigits: 2,
-                            })}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {selectedDetail.transactions.length === 0 && (
-                    <p className="text-[13px] text-text-muted text-center py-8">
-                      No activity history available.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          {!loadingDetail && !selectedDetail && (
-            <div className="flex items-center justify-center h-64">
-              <p className="text-[13px] text-text-muted">
-                Customer not found.
-              </p>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
+      <CustomerDetailSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        customerId={sheetCustomerId}
+      />
     </div>
   );
 }

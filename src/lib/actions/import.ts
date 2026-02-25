@@ -162,11 +162,13 @@ export async function previewStitching(options: {
   const confidentRows: StitchPreviewRow[] = [];
   const newRows: StitchPreviewRow[] = [];
   const duplicateRows: StitchPreviewRow[] = [];
+  const enrichmentRows: StitchPreviewRow[] = [];
 
   let confidentCount = 0;
   let uncertainCount = 0;
   let newCount = 0;
   let duplicateCount = 0;
+  let enrichmentCount = 0;
   let totalValid = 0;
 
   for (let i = 0; i < parsed.rows.length; i++) {
@@ -183,6 +185,7 @@ export async function previewStitching(options: {
     const externalId = mapped[schema.idField] ?? "";
     const email = mapped[schema.emailField] ?? null;
     const name = schema.nameField ? (mapped[schema.nameField] ?? null) : null;
+    const phone = schema.phoneField ? (mapped[schema.phoneField] ?? null) : null;
 
     // For POS, use membership_id as the stitch external ID
     const stitchExternalId =
@@ -201,11 +204,14 @@ export async function previewStitching(options: {
             externalId,
             email,
             name,
+            phone,
             category: "duplicate",
             existingCustomerId: null,
             existingCustomerName: null,
             existingCustomerEmail: null,
             confidence: 1,
+            candidates: [],
+            enrichableFields: [],
           });
         }
         continue;
@@ -213,18 +219,21 @@ export async function previewStitching(options: {
     }
 
     // Preview stitch
-    const preview = await previewStitchIdentity(admin, options.source, stitchExternalId, email, name);
+    const preview = await previewStitchIdentity(admin, options.source, stitchExternalId, email, name, phone);
 
     const row: StitchPreviewRow = {
       rowIndex: i + 1,
       externalId,
       email,
       name,
+      phone,
       category: preview.category,
       existingCustomerId: preview.existingCustomerId,
       existingCustomerName: preview.existingCustomerName,
       existingCustomerEmail: preview.existingCustomerEmail,
       confidence: preview.confidence,
+      candidates: preview.candidates,
+      enrichableFields: preview.enrichableFields,
     };
 
     switch (preview.category) {
@@ -233,9 +242,15 @@ export async function previewStitching(options: {
         confidentCount++;
         if (confidentRows.length < 50) confidentRows.push(row);
         break;
+      case "enrichment":
+        enrichmentCount++;
+        enrichmentRows.push(row);
+        break;
+      case "phone":
+      case "name_match":
       case "name_conflict":
         uncertainCount++;
-        uncertainRows.push(row); // Keep all uncertain rows — user must decide
+        uncertainRows.push(row);
         break;
       case "new":
         newCount++;
@@ -250,12 +265,14 @@ export async function previewStitching(options: {
       uncertainMatches: uncertainCount,
       newCustomers: newCount,
       duplicateRows: duplicateCount,
+      enrichments: enrichmentCount,
       totalValidRows: totalValid,
     },
     uncertainRows,
     confidentRows,
     newRows,
     duplicateRows,
+    enrichmentRows,
   };
 }
 
@@ -324,10 +341,12 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
   // Detailed counters
   let matchedByExternalId = 0;
   let matchedByEmail = 0;
+  let matchedByPhone = 0;
   let newCustomersCreated = 0;
   let duplicateRowsSkipped = 0;
   let userSkippedRows = 0;
   let conflictsCreated = 0;
+  let enrichedCount = 0;
 
   const decisions = options.stitchDecisions ?? {};
 
@@ -350,6 +369,7 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
       const externalId = mapped[schema.idField] ?? "";
       const email = mapped[schema.emailField] ?? null;
       const name = schema.nameField ? (mapped[schema.nameField] ?? null) : null;
+      const phone = schema.phoneField ? (mapped[schema.phoneField] ?? null) : null;
 
       // For POS, use membership_id as the stitch external ID
       const stitchExternalId =
@@ -365,11 +385,23 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
         continue;
       }
 
-      // Determine forceCustomerId from user merge decision
-      const forceId =
-        decision && decision.action === "merge"
-          ? decision.targetCustomerId
-          : undefined;
+      // Determine forceCustomerId and enrichFields from user decisions
+      let forceId: string | undefined;
+      let enrichFields: { full_name?: string; email?: string; phone?: string } | undefined;
+
+      if (decision) {
+        if (decision.action === "merge") {
+          forceId = decision.targetCustomerId;
+        } else if (decision.action === "accept_enrichment") {
+          forceId = decision.targetCustomerId;
+          // Build enrichment fields from the CSV row data
+          enrichFields = {};
+          if (name) enrichFields.full_name = name;
+          if (email) enrichFields.email = email;
+          if (phone) enrichFields.phone = phone;
+          enrichedCount++;
+        }
+      }
 
       // Stitch identity
       const { customerId, isNew, matchedBy } = await stitchIdentity(
@@ -378,18 +410,21 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
         stitchExternalId,
         email,
         name,
-        forceId
+        phone,
+        forceId,
+        enrichFields
       );
 
       // Track match type
-      if (forceId) {
+      if (forceId && !enrichFields) {
         matchedByEmail++; // User-forced merges count as manual match
       } else if (matchedBy === "external_id") {
         matchedByExternalId++;
       } else if (matchedBy === "email") {
         matchedByEmail++;
+      } else if (matchedBy === "phone") {
+        matchedByPhone++;
       } else if (isNew && matchedBy === "name") {
-        // name_conflict — created new + flagged conflict
         newCustomersCreated++;
         conflictsCreated++;
       } else if (isNew) {
@@ -457,10 +492,12 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
     errors,
     matchedByExternalId,
     matchedByEmail,
+    matchedByPhone,
     newCustomersCreated,
     duplicateRowsSkipped,
     userSkippedRows,
     conflictsCreated,
+    enrichedCount,
   };
 }
 

@@ -93,12 +93,14 @@ export async function GET() {
           const email = mapped[schema.emailField] ?? null;
           const name = mapped[schema.nameField] ?? null;
 
+          const phone = schema.phoneField ? (mapped[schema.phoneField] ?? null) : null;
           const { customerId } = await stitchIdentity(
             admin,
             source,
             externalId,
             email,
-            name
+            name,
+            phone
           );
 
           // Insert into source-specific table

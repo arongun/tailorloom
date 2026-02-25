@@ -80,6 +80,9 @@ export function isConfidentDetection(results: DetectionResult[]): boolean {
   // Must have all required fields mapped
   if (top.requiredMapped < top.requiredTotal) return false;
 
+  // Very high confidence — auto-select regardless of gap
+  if (top.confidence >= 0.9) return true;
+
   // Must be clearly better than the next best
   if (runnerUp && top.confidence - runnerUp.confidence < 0.15) return false;
 

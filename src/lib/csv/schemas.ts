@@ -122,6 +122,7 @@ export const STRIPE_SCHEMA: SourceSchema = {
   idField: "external_payment_id",
   emailField: "customer_email",
   nameField: "customer_name",
+  phoneField: "phone",
 };
 
 export const CALENDLY_SCHEMA: SourceSchema = {
@@ -266,6 +267,7 @@ export const CALENDLY_SCHEMA: SourceSchema = {
   idField: "external_booking_id",
   emailField: "invitee_email",
   nameField: "invitee_name",
+  phoneField: "phone",
 };
 
 export const PASSLINE_SCHEMA: SourceSchema = {
@@ -387,6 +389,7 @@ export const PASSLINE_SCHEMA: SourceSchema = {
   idField: "external_attendance_id",
   emailField: "attendee_email",
   nameField: "attendee_name",
+  phoneField: "phone",
 };
 
 export const POS_SCHEMA: SourceSchema = {
