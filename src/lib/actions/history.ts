@@ -295,3 +295,114 @@ export async function resolveConflict(
     .eq("status", "pending")
     .or(`customer_a_id.eq.${removeId},customer_b_id.eq.${removeId}`);
 }
+
+// ─── Revert Import ───────────────────────────────────────
+
+/**
+ * Revert a completed import by deleting all records created by it.
+ *
+ * 1. Delete payments, bookings, attendance with this import_id
+ * 2. Delete customer_sources whose customers ONLY have sources from this import
+ * 3. Delete customers that have no remaining customer_sources after cleanup
+ * 4. Delete stitching_conflicts linked to this import
+ * 5. Mark import_history as "reverted"
+ */
+export async function revertImport(importId: string): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const admin = createAdminClient();
+
+  // Verify the import exists and is revertible
+  const { data: imp, error: fetchError } = await admin
+    .from("import_history")
+    .select("id, status, org_id")
+    .eq("id", importId)
+    .single();
+
+  if (fetchError || !imp) throw new Error("Import not found");
+  if (imp.status === "reverted") throw new Error("Import already reverted");
+  if (imp.status === "processing") throw new Error("Import still processing");
+
+  // 1. Find customers affected by this import (via source data tables)
+  const [paymentsRes, bookingsRes, attendanceRes] = await Promise.all([
+    admin
+      .from("payments")
+      .select("customer_id")
+      .eq("import_id", importId),
+    admin
+      .from("bookings")
+      .select("customer_id")
+      .eq("import_id", importId),
+    admin
+      .from("attendance")
+      .select("customer_id")
+      .eq("import_id", importId),
+  ]);
+
+  const affectedCustomerIds = new Set<string>();
+  for (const row of [...(paymentsRes.data ?? []), ...(bookingsRes.data ?? []), ...(attendanceRes.data ?? [])]) {
+    if (row.customer_id) affectedCustomerIds.add(row.customer_id);
+  }
+
+  // 2. Delete source data rows
+  await Promise.all([
+    admin.from("payments").delete().eq("import_id", importId),
+    admin.from("bookings").delete().eq("import_id", importId),
+    admin.from("attendance").delete().eq("import_id", importId),
+  ]);
+
+  // 3. Delete stitching conflicts linked to this import
+  await admin.from("stitching_conflicts").delete().eq("import_id", importId);
+
+  // 4. For each affected customer, check if they still have data from other imports
+  //    If not, delete the customer and their customer_sources
+  if (affectedCustomerIds.size > 0) {
+    const customerIdArr = Array.from(affectedCustomerIds);
+
+    for (const customerId of customerIdArr) {
+      // Check if this customer has any remaining data
+      const [remainingPayments, remainingBookings, remainingAttendance] =
+        await Promise.all([
+          admin
+            .from("payments")
+            .select("id", { count: "exact", head: true })
+            .eq("customer_id", customerId),
+          admin
+            .from("bookings")
+            .select("id", { count: "exact", head: true })
+            .eq("customer_id", customerId),
+          admin
+            .from("attendance")
+            .select("id", { count: "exact", head: true })
+            .eq("customer_id", customerId),
+        ]);
+
+      const totalRemaining =
+        (remainingPayments.count ?? 0) +
+        (remainingBookings.count ?? 0) +
+        (remainingAttendance.count ?? 0);
+
+      if (totalRemaining === 0) {
+        // No data left — remove customer and their sources
+        await admin.from("customer_sources").delete().eq("customer_id", customerId);
+        await admin.from("stitching_conflicts").delete().or(
+          `customer_a_id.eq.${customerId},customer_b_id.eq.${customerId}`
+        );
+        await admin.from("customers").delete().eq("id", customerId);
+      }
+    }
+  }
+
+  // 5. Mark import as reverted
+  await admin
+    .from("import_history")
+    .update({
+      status: "reverted",
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", importId);
+}

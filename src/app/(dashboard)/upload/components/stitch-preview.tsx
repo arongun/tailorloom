@@ -49,32 +49,32 @@ export function StitchPreview({
           label="Confident Matches"
           value={summary.confidentMatches}
           icon={<Link2 className="h-4 w-4 text-emerald-500" />}
-          color="bg-emerald-50/50 border-emerald-200"
+          borderColor="border-emerald-200 dark:border-emerald-800"
+          fillColor="bg-emerald-50/50 dark:bg-emerald-950/40"
           description="Matched by ID or email"
         />
         <SummaryCard
           label="Needs Review"
           value={summary.uncertainMatches}
           icon={<AlertTriangle className="h-4 w-4 text-amber-500" />}
-          color={
-            summary.uncertainMatches > 0
-              ? "bg-amber-50/50 border-amber-200"
-              : "bg-surface border-border-default"
-          }
+          borderColor="border-amber-300 dark:border-amber-700"
+          fillColor="bg-amber-50/50 dark:bg-amber-950/40"
           description="Name match, different email"
         />
         <SummaryCard
           label="New Customers"
           value={summary.newCustomers}
           icon={<UserPlus className="h-4 w-4 text-blue-500" />}
-          color="bg-blue-50/50 border-blue-200"
+          borderColor="border-blue-200 dark:border-blue-800"
+          fillColor="bg-blue-50/50 dark:bg-blue-950/40"
           description="Will be created"
         />
         <SummaryCard
           label="Duplicates"
           value={summary.duplicateRows}
-          icon={<Copy className="h-4 w-4 text-text-muted" />}
-          color="bg-surface border-border-default"
+          icon={<Copy className="h-4 w-4 text-red-400" />}
+          borderColor="border-red-300 dark:border-red-800"
+          fillColor="bg-red-50/50 dark:bg-red-950/40"
           description="Already imported, skipped"
         />
       </div>
@@ -207,17 +207,25 @@ function SummaryCard({
   label,
   value,
   icon,
-  color,
+  borderColor,
+  fillColor,
   description,
 }: {
   label: string;
   value: number;
   icon: React.ReactNode;
-  color: string;
+  borderColor: string;
+  fillColor: string;
   description: string;
 }) {
   return (
-    <div className={`rounded-lg border p-4 ${color}`}>
+    <div
+      className={cn(
+        "rounded-lg border p-4",
+        borderColor,
+        value > 0 ? fillColor : "bg-surface"
+      )}
+    >
       <div className="flex items-center gap-2 mb-2">{icon}</div>
       <p className="text-[18px] font-semibold text-text-primary tabular-nums">
         {value}

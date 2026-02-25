@@ -297,15 +297,42 @@ export default function UploadPage() {
 
         {step === 2 && stitchPreview && (
           <div className="space-y-4">
-            <p className="text-[13px] text-text-muted mb-4">
-              Review how rows will be matched to existing customers before
-              importing
-            </p>
-            <StitchPreview
-              result={stitchPreview}
-              decisions={stitchDecisions}
-              onDecisionsChange={setStitchDecisions}
-            />
+            {stitchPreview.summary.confidentMatches === 0 &&
+            stitchPreview.summary.uncertainMatches === 0 &&
+            stitchPreview.summary.newCustomers === 0 &&
+            stitchPreview.summary.duplicateRows > 0 ? (
+              <>
+                <div className="flex flex-col items-center text-center py-8">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
+                    <Copy className="h-7 w-7 text-amber-600" />
+                  </div>
+                  <p className="mt-4 text-[16px] font-semibold text-text-primary">
+                    All rows already imported
+                  </p>
+                  <p className="mt-1 text-[13px] text-text-muted max-w-sm">
+                    Every row in this file matches data that&apos;s already in the
+                    system. There&apos;s nothing new to import.
+                  </p>
+                </div>
+                <StitchPreview
+                  result={stitchPreview}
+                  decisions={stitchDecisions}
+                  onDecisionsChange={setStitchDecisions}
+                />
+              </>
+            ) : (
+              <>
+                <p className="text-[13px] text-text-muted mb-4">
+                  Review how rows will be matched to existing customers before
+                  importing
+                </p>
+                <StitchPreview
+                  result={stitchPreview}
+                  decisions={stitchDecisions}
+                  onDecisionsChange={setStitchDecisions}
+                />
+              </>
+            )}
           </div>
         )}
 
@@ -337,7 +364,7 @@ export default function UploadPage() {
               className="text-[13px] text-text-muted hover:text-text-secondary"
             >
               <RotateCcw className="mr-1.5 h-4 w-4" />
-              Start over
+              Upload another CSV
             </Button>
           )}
         </div>
@@ -361,11 +388,15 @@ export default function UploadPage() {
               )}
             </Button>
           )}
-          {step === 2 && (
-            <Button onClick={handleImport} className="text-[13px]">
-              <Upload className="mr-1.5 h-4 w-4" />
-              Import data
-            </Button>
+          {step === 2 && stitchPreview && (
+            stitchPreview.summary.confidentMatches === 0 &&
+            stitchPreview.summary.uncertainMatches === 0 &&
+            stitchPreview.summary.newCustomers === 0 ? null : (
+              <Button onClick={handleImport} className="text-[13px]">
+                <Upload className="mr-1.5 h-4 w-4" />
+                Import data
+              </Button>
+            )
           )}
         </div>
       </div>

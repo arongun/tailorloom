@@ -2,7 +2,7 @@
 // These will be replaced by auto-generated types from `supabase gen types` once the schema is live
 
 export type SourceType = "stripe" | "calendly" | "passline" | "pos" | "wetravel" | "manual";
-export type ImportStatus = "pending" | "processing" | "completed" | "failed";
+export type ImportStatus = "pending" | "processing" | "completed" | "failed" | "skipped" | "reverted";
 export type PaymentStatus = "succeeded" | "pending" | "failed" | "refunded" | "approved";
 export type BookingStatus = "scheduled" | "completed" | "cancelled" | "no_show" | "confirmed";
 export type ConflictStatus = "pending" | "merged" | "dismissed" | "split";

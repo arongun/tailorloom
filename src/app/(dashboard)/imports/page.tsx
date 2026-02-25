@@ -6,9 +6,12 @@ import {
   CreditCard,
   Calendar,
   Ticket,
+  ShoppingBag,
+  Globe,
   Loader2,
   ChevronLeft,
   ChevronRight,
+  Undo2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,10 +32,23 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   getImportHistory,
+  revertImport,
   type ImportHistoryRow,
 } from "@/lib/actions/history";
 import type { SourceType } from "@/lib/types";
+import { toast } from "sonner";
 
 const PAGE_SIZE = 20;
 
@@ -58,13 +74,48 @@ const SOURCE_CONFIG: Record<
     color: "text-emerald-700",
     bg: "bg-emerald-100",
   },
+  pos: {
+    label: "POS",
+    icon: ShoppingBag,
+    color: "text-orange-700",
+    bg: "bg-orange-100",
+  },
+  wetravel: {
+    label: "WeTravel",
+    icon: Globe,
+    color: "text-cyan-700",
+    bg: "bg-cyan-100",
+  },
 };
 
-const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-  completed: { label: "Completed", variant: "default" },
-  processing: { label: "Processing", variant: "secondary" },
-  failed: { label: "Failed", variant: "destructive" },
-  pending: { label: "Pending", variant: "outline" },
+const STATUS_CONFIG: Record<
+  string,
+  { label: string; className: string }
+> = {
+  completed: {
+    label: "Completed",
+    className: "bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border-emerald-200",
+  },
+  processing: {
+    label: "Processing",
+    className: "bg-blue-50 text-blue-700 hover:bg-blue-50 border-blue-200",
+  },
+  failed: {
+    label: "Failed",
+    className: "bg-rose-50 text-rose-700 hover:bg-rose-50 border-rose-200",
+  },
+  pending: {
+    label: "Pending",
+    className: "bg-slate-50 text-slate-600 hover:bg-slate-50 border-slate-200",
+  },
+  skipped: {
+    label: "Skipped",
+    className: "bg-amber-50 text-amber-700 hover:bg-amber-50 border-amber-200",
+  },
+  reverted: {
+    label: "Reverted",
+    className: "bg-slate-100 text-slate-500 hover:bg-slate-100 border-slate-200",
+  },
 };
 
 export default function ImportsPage() {
@@ -73,6 +124,7 @@ export default function ImportsPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [revertingId, setRevertingId] = useState<string | null>(null);
 
   const fetchImports = useCallback(async () => {
     setLoading(true);
@@ -80,7 +132,10 @@ export default function ImportsPage() {
       const result = await getImportHistory({
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
-        source: sourceFilter !== "all" ? (sourceFilter as SourceType) : undefined,
+        source:
+          sourceFilter !== "all"
+            ? (sourceFilter as SourceType)
+            : undefined,
       });
       setImports(result.imports);
       setTotal(result.total);
@@ -94,6 +149,21 @@ export default function ImportsPage() {
   useEffect(() => {
     fetchImports();
   }, [fetchImports]);
+
+  const handleRevert = async (importId: string) => {
+    setRevertingId(importId);
+    try {
+      await revertImport(importId);
+      toast.success("Import reverted — all records removed");
+      fetchImports();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to revert import"
+      );
+    } finally {
+      setRevertingId(null);
+    }
+  };
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
@@ -111,7 +181,13 @@ export default function ImportsPage() {
 
       {/* Filter bar */}
       <div className="mb-4 flex items-center gap-3 animate-fade-in-up stagger-2">
-        <Select value={sourceFilter} onValueChange={(v) => { setSourceFilter(v); setPage(0); }}>
+        <Select
+          value={sourceFilter}
+          onValueChange={(v) => {
+            setSourceFilter(v);
+            setPage(0);
+          }}
+        >
           <SelectTrigger className="w-[160px] text-[13px]">
             <SelectValue placeholder="All sources" />
           </SelectTrigger>
@@ -120,6 +196,8 @@ export default function ImportsPage() {
             <SelectItem value="stripe">Stripe</SelectItem>
             <SelectItem value="calendly">Calendly</SelectItem>
             <SelectItem value="passline">PassLine</SelectItem>
+            <SelectItem value="pos">POS</SelectItem>
+            <SelectItem value="wetravel">WeTravel</SelectItem>
           </SelectContent>
         </Select>
         <span className="text-[12px] text-text-muted ml-auto">
@@ -153,28 +231,50 @@ export default function ImportsPage() {
                   <TableHead className="text-[12px]">File</TableHead>
                   <TableHead className="text-[12px]">Source</TableHead>
                   <TableHead className="text-[12px]">Status</TableHead>
-                  <TableHead className="text-[12px] text-right">Total</TableHead>
-                  <TableHead className="text-[12px] text-right">Imported</TableHead>
-                  <TableHead className="text-[12px] text-right">Skipped</TableHead>
-                  <TableHead className="text-[12px] text-right">Errors</TableHead>
+                  <TableHead className="text-[12px] text-right">
+                    Total
+                  </TableHead>
+                  <TableHead className="text-[12px] text-right">
+                    Imported
+                  </TableHead>
+                  <TableHead className="text-[12px] text-right">
+                    Skipped
+                  </TableHead>
+                  <TableHead className="text-[12px] text-right">
+                    Errors
+                  </TableHead>
                   <TableHead className="text-[12px]">Date</TableHead>
+                  <TableHead className="text-[12px] w-[80px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {imports.map((imp) => {
                   const src = SOURCE_CONFIG[imp.source];
-                  const status = STATUS_CONFIG[imp.status] ?? STATUS_CONFIG.pending;
+                  const status =
+                    STATUS_CONFIG[imp.status] ?? STATUS_CONFIG.pending;
                   const SrcIcon = src?.icon ?? History;
+                  const canRevert =
+                    imp.status === "completed" && imp.imported_rows > 0;
+                  const isReverting = revertingId === imp.id;
 
                   return (
-                    <TableRow key={imp.id}>
+                    <TableRow
+                      key={imp.id}
+                      className={
+                        imp.status === "reverted" ? "opacity-50" : ""
+                      }
+                    >
                       <TableCell className="text-[13px] font-medium text-text-primary max-w-[200px] truncate">
                         {imp.file_name}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">
-                          <div className={`flex h-5 w-5 items-center justify-center rounded ${src?.bg ?? "bg-surface-muted"}`}>
-                            <SrcIcon className={`h-3 w-3 ${src?.color ?? "text-text-muted"}`} />
+                          <div
+                            className={`flex h-5 w-5 items-center justify-center rounded ${src?.bg ?? "bg-surface-muted"}`}
+                          >
+                            <SrcIcon
+                              className={`h-3 w-3 ${src?.color ?? "text-text-muted"}`}
+                            />
                           </div>
                           <span className="text-[12px] text-text-secondary">
                             {src?.label ?? imp.source}
@@ -182,7 +282,10 @@ export default function ImportsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={status.variant} className="text-[11px]">
+                        <Badge
+                          variant="outline"
+                          className={`text-[11px] font-medium ${status.className}`}
+                        >
                           {status.label}
                         </Badge>
                       </TableCell>
@@ -195,11 +298,66 @@ export default function ImportsPage() {
                       <TableCell className="text-[13px] text-right tabular-nums text-text-muted">
                         {imp.skipped_rows}
                       </TableCell>
-                      <TableCell className={`text-[13px] text-right tabular-nums ${imp.error_rows > 0 ? "text-rose-600" : "text-text-muted"}`}>
+                      <TableCell
+                        className={`text-[13px] text-right tabular-nums ${imp.error_rows > 0 ? "text-rose-600" : "text-text-muted"}`}
+                      >
                         {imp.error_rows}
                       </TableCell>
                       <TableCell className="text-[12px] text-text-muted">
-                        {formatDate(imp.completed_at ?? imp.started_at ?? imp.created_at)}
+                        {formatDate(
+                          imp.completed_at ??
+                            imp.started_at ??
+                            imp.created_at
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {canRevert && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-2 text-[11px] text-text-muted hover:text-rose-600"
+                                disabled={isReverting}
+                              >
+                                {isReverting ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <>
+                                    <Undo2 className="h-3 w-3 mr-1" />
+                                    Revert
+                                  </>
+                                )}
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  Revert this import?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will delete all {imp.imported_rows}{" "}
+                                  records created by{" "}
+                                  <span className="font-medium">
+                                    {imp.file_name}
+                                  </span>
+                                  . Customers with no remaining data from
+                                  other imports will also be removed. This
+                                  cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleRevert(imp.id)}
+                                  className="bg-rose-600 hover:bg-rose-700"
+                                >
+                                  Revert import
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
                       </TableCell>
                     </TableRow>
                   );

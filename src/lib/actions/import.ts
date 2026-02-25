@@ -426,7 +426,11 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
 
   // Update import record
   const finalStatus =
-    errorRows === parsed.totalRows ? "failed" : "completed";
+    errorRows === parsed.totalRows
+      ? "failed"
+      : importedRows === 0
+        ? "skipped"
+        : "completed";
 
   await admin
     .from("import_history")
