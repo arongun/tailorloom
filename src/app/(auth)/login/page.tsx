@@ -164,10 +164,11 @@ export default function LoginPage() {
             <Image
               src="/tailorloom-logo.png"
               alt="TailorLoom"
-              width={180}
-              height={40}
-              className="mb-3"
+              width={300}
+              height={100}
+              className="mb-3 h-10 w-auto"
               priority
+              unoptimized
             />
             <p className="text-[13px] text-slate-500">
               Revenue Intelligence Console

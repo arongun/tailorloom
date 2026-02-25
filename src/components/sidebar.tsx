@@ -65,10 +65,11 @@ export function Sidebar() {
             <Image
               src="/tailorloom-logo.png"
               alt="TailorLoom"
-              width={130}
-              height={28}
-              className="shrink-0"
+              width={300}
+              height={100}
+              className="shrink-0 h-7 w-auto"
               priority
+              unoptimized
             />
             <button
               onClick={(e) => {
