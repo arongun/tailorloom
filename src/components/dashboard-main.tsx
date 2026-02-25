@@ -1,17 +1,20 @@
 "use client";
 
 import { useSidebar } from "@/components/sidebar-provider";
-import { cn } from "@/lib/utils";
+import {
+  SIDEBAR_EXPANDED_W,
+  SIDEBAR_COLLAPSED_W,
+} from "@/components/sidebar";
 
 export function DashboardMain({ children }: { children: React.ReactNode }) {
   const { collapsed } = useSidebar();
 
   return (
     <main
-      className={cn(
-        "min-h-screen transition-all duration-200",
-        collapsed ? "ml-[60px]" : "ml-[260px]"
-      )}
+      className="min-h-screen transition-all duration-200"
+      style={{
+        marginLeft: collapsed ? SIDEBAR_COLLAPSED_W : SIDEBAR_EXPANDED_W,
+      }}
     >
       {children}
     </main>
