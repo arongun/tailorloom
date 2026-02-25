@@ -225,10 +225,10 @@ export default function UploadPage() {
     <div className="p-8 max-w-[960px]">
       {/* Header */}
       <div className="mb-8 animate-fade-in">
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-900">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-text-primary">
           Upload Data
         </h1>
-        <p className="mt-1 text-[13px] text-slate-500">
+        <p className="mt-1 text-[13px] text-text-muted">
           Import CSV files from Stripe, Calendly, PassLine, POS, or WeTravel
         </p>
       </div>
@@ -242,10 +242,10 @@ export default function UploadPage() {
                 className={cn(
                   "flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition-all",
                   s === step
-                    ? "bg-slate-900 text-white"
+                    ? "bg-surface-active text-text-on-active"
                     : s < step
-                      ? "bg-slate-200 text-slate-600"
-                      : "bg-slate-100 text-slate-400"
+                      ? "bg-surface-muted text-text-secondary"
+                      : "bg-surface-muted text-text-muted"
                 )}
               >
                 {s < step ? (
@@ -258,10 +258,10 @@ export default function UploadPage() {
                 className={cn(
                   "ml-2 text-[12px] font-medium transition-colors",
                   s === step
-                    ? "text-slate-900"
+                    ? "text-text-primary"
                     : s < step
-                      ? "text-slate-500"
-                      : "text-slate-400"
+                      ? "text-text-muted"
+                      : "text-text-muted"
                 )}
               >
                 {STEP_LABELS[s]}
@@ -270,7 +270,7 @@ export default function UploadPage() {
                 <div
                   className={cn(
                     "mx-4 h-px w-10",
-                    s < step ? "bg-slate-300" : "bg-slate-100"
+                    s < step ? "bg-text-muted" : "bg-surface-muted"
                   )}
                 />
               )}
@@ -283,7 +283,7 @@ export default function UploadPage() {
       <div className="animate-fade-in-up stagger-3">
         {step === 1 && (
           <div className="space-y-4">
-            <p className="text-[13px] text-slate-500 mb-4">
+            <p className="text-[13px] text-text-muted mb-4">
               Upload a CSV export — the source type is auto-detected from the
               column headers
             </p>
@@ -297,7 +297,7 @@ export default function UploadPage() {
 
         {step === 2 && stitchPreview && (
           <div className="space-y-4">
-            <p className="text-[13px] text-slate-500 mb-4">
+            <p className="text-[13px] text-text-muted mb-4">
               Review how rows will be matched to existing customers before
               importing
             </p>
@@ -324,7 +324,7 @@ export default function UploadPage() {
             <Button
               variant="ghost"
               onClick={() => setStep(1)}
-              className="text-[13px] text-slate-500 hover:text-slate-700"
+              className="text-[13px] text-text-muted hover:text-text-secondary"
             >
               <ArrowLeft className="mr-1.5 h-4 w-4" />
               Back
@@ -334,7 +334,7 @@ export default function UploadPage() {
             <Button
               variant="ghost"
               onClick={handleStartOver}
-              className="text-[13px] text-slate-500 hover:text-slate-700"
+              className="text-[13px] text-text-muted hover:text-text-secondary"
             >
               <RotateCcw className="mr-1.5 h-4 w-4" />
               Start over
@@ -385,13 +385,13 @@ function DetailedImportResultView({
   if (isImporting) {
     return (
       <div className="flex flex-col items-center justify-center py-16">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-900">
-          <Loader2 className="h-6 w-6 text-white animate-spin" />
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-active">
+          <Loader2 className="h-6 w-6 text-text-on-active animate-spin" />
         </div>
-        <p className="mt-5 text-[14px] font-medium text-slate-900">
+        <p className="mt-5 text-[14px] font-medium text-text-primary">
           Importing data...
         </p>
-        <p className="mt-1 text-[12px] text-slate-400">
+        <p className="mt-1 text-[12px] text-text-muted">
           Stitching identities, writing records, detecting conflicts
         </p>
         <div className="mt-6 w-64">
@@ -415,10 +415,10 @@ function DetailedImportResultView({
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100">
               <CheckCircle2 className="h-7 w-7 text-emerald-600" />
             </div>
-            <p className="mt-4 text-[16px] font-semibold text-slate-900">
+            <p className="mt-4 text-[16px] font-semibold text-text-primary">
               Import complete
             </p>
-            <p className="mt-1 text-[13px] text-slate-500">
+            <p className="mt-1 text-[13px] text-text-muted">
               {result.importedRows} of {result.totalRows} rows imported
               successfully
             </p>
@@ -428,10 +428,10 @@ function DetailedImportResultView({
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
               <FileText className="h-7 w-7 text-amber-600" />
             </div>
-            <p className="mt-4 text-[16px] font-semibold text-slate-900">
+            <p className="mt-4 text-[16px] font-semibold text-text-primary">
               Import completed with issues
             </p>
-            <p className="mt-1 text-[13px] text-slate-500">
+            <p className="mt-1 text-[13px] text-text-muted">
               {result.importedRows} imported, {result.errorRows} failed,{" "}
               {result.skippedRows} skipped
             </p>
@@ -441,10 +441,10 @@ function DetailedImportResultView({
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-100">
               <XCircle className="h-7 w-7 text-rose-600" />
             </div>
-            <p className="mt-4 text-[16px] font-semibold text-slate-900">
+            <p className="mt-4 text-[16px] font-semibold text-text-primary">
               Import failed
             </p>
-            <p className="mt-1 text-[13px] text-slate-500">
+            <p className="mt-1 text-[13px] text-text-muted">
               No rows could be imported. Check your mapping and data.
             </p>
           </>
@@ -452,13 +452,13 @@ function DetailedImportResultView({
       </div>
 
       {/* Detailed breakdown */}
-      <div className="rounded-xl border border-slate-200 overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-3">
-          <p className="text-[13px] font-medium text-slate-700">
+      <div className="rounded-xl border border-border-default overflow-hidden">
+        <div className="border-b border-border-muted px-5 py-3">
+          <p className="text-[13px] font-medium text-text-secondary">
             Import breakdown
           </p>
         </div>
-        <div className="divide-y divide-slate-100">
+        <div className="divide-y divide-border-muted">
           <BreakdownRow
             icon={<Link2 className="h-4 w-4 text-emerald-500" />}
             label="Matched by External ID"
@@ -475,13 +475,13 @@ function DetailedImportResultView({
             value={result.newCustomersCreated}
           />
           <BreakdownRow
-            icon={<Copy className="h-4 w-4 text-slate-400" />}
+            icon={<Copy className="h-4 w-4 text-text-muted" />}
             label="Duplicate Rows Skipped"
             value={result.duplicateRowsSkipped}
           />
           {result.userSkippedRows > 0 && (
             <BreakdownRow
-              icon={<SkipForward className="h-4 w-4 text-slate-400" />}
+              icon={<SkipForward className="h-4 w-4 text-text-muted" />}
               label="User Skipped"
               value={result.userSkippedRows}
             />
@@ -500,11 +500,11 @@ function DetailedImportResultView({
               value={result.errorRows}
             />
           )}
-          <div className="flex items-center justify-between px-5 py-3 bg-slate-50/50">
-            <span className="text-[13px] font-medium text-slate-900">
+          <div className="flex items-center justify-between px-5 py-3 bg-surface-elevated/50">
+            <span className="text-[13px] font-medium text-text-primary">
               Total Imported
             </span>
-            <span className="text-[13px] font-semibold text-slate-900 tabular-nums">
+            <span className="text-[13px] font-semibold text-text-primary tabular-nums">
               {result.importedRows} / {result.totalRows}
             </span>
           </div>
@@ -557,9 +557,9 @@ function BreakdownRow({
     <div className="flex items-center justify-between px-5 py-2.5">
       <div className="flex items-center gap-2.5">
         {icon}
-        <span className="text-[13px] text-slate-600">{label}</span>
+        <span className="text-[13px] text-text-secondary">{label}</span>
       </div>
-      <span className="text-[13px] font-medium text-slate-900 tabular-nums">
+      <span className="text-[13px] font-medium text-text-primary tabular-nums">
         {value}
       </span>
     </div>

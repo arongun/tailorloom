@@ -50,7 +50,7 @@ const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
   passline: { label: "PassLine", color: "bg-orange-50 text-orange-700" },
   pos: { label: "POS", color: "bg-emerald-50 text-emerald-700" },
   wetravel: { label: "WeTravel", color: "bg-cyan-50 text-cyan-700" },
-  manual: { label: "Manual", color: "bg-slate-100 text-slate-600" },
+  manual: { label: "Manual", color: "bg-surface-muted text-text-secondary" },
 };
 
 const TRANSACTION_ICONS: Record<string, typeof CreditCard> = {
@@ -144,11 +144,11 @@ export function CustomersClient({ customers }: CustomersClientProps) {
 
   const SortIcon = ({ columnKey }: { columnKey: SortKey }) => {
     if (sortKey !== columnKey)
-      return <ArrowUpDown className="ml-1 h-3 w-3 text-slate-300" />;
+      return <ArrowUpDown className="ml-1 h-3 w-3 text-text-muted" />;
     return sortDir === "asc" ? (
-      <ArrowUp className="ml-1 h-3 w-3 text-slate-600" />
+      <ArrowUp className="ml-1 h-3 w-3 text-text-secondary" />
     ) : (
-      <ArrowDown className="ml-1 h-3 w-3 text-slate-600" />
+      <ArrowDown className="ml-1 h-3 w-3 text-text-secondary" />
     );
   };
 
@@ -170,9 +170,9 @@ export function CustomersClient({ customers }: CustomersClientProps) {
 
   const segmentBadge = (segment: string) => {
     const styles: Record<string, string> = {
-      "High Value": "bg-slate-900 text-white hover:bg-slate-900",
-      Regular: "bg-slate-100 text-slate-700 hover:bg-slate-100",
-      "Low Value": "bg-slate-50 text-slate-500 hover:bg-slate-50",
+      "High Value": "bg-surface-active text-text-on-active hover:bg-surface-active",
+      Regular: "bg-surface-muted text-text-secondary hover:bg-surface-muted",
+      "Low Value": "bg-surface-elevated text-text-muted hover:bg-surface-elevated",
     };
     return (
       <Badge
@@ -191,7 +191,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
         {sources.map((s) => {
           const info = SOURCE_LABELS[s] ?? {
             label: s,
-            color: "bg-slate-100 text-slate-600",
+            color: "bg-surface-muted text-text-secondary",
           };
           return (
             <Badge
@@ -214,10 +214,10 @@ export function CustomersClient({ customers }: CustomersClientProps) {
     <div className="p-8 max-w-[1400px]">
       {/* Header */}
       <div className="mb-6 animate-fade-in">
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-900">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-text-primary">
           Customers
         </h1>
-        <p className="mt-1 text-[13px] text-slate-500">
+        <p className="mt-1 text-[13px] text-text-muted">
           {filtered.length} of {customers.length} customers
         </p>
       </div>
@@ -225,16 +225,16 @@ export function CustomersClient({ customers }: CustomersClientProps) {
       {/* Filters */}
       <div className="mb-4 flex items-center gap-3 animate-fade-in stagger-2">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
           <Input
             placeholder="Search by name or email..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 text-[13px] h-9 border-slate-200 bg-white"
+            className="pl-9 text-[13px] h-9 border-border-default bg-surface"
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[140px] text-[13px] h-9 border-slate-200 bg-white">
+          <SelectTrigger className="w-[140px] text-[13px] h-9 border-border-default bg-surface">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
@@ -245,7 +245,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
           </SelectContent>
         </Select>
         <Select value={segmentFilter} onValueChange={setSegmentFilter}>
-          <SelectTrigger className="w-[150px] text-[13px] h-9 border-slate-200 bg-white">
+          <SelectTrigger className="w-[150px] text-[13px] h-9 border-border-default bg-surface">
             <SelectValue placeholder="Segment" />
           </SelectTrigger>
           <SelectContent>
@@ -259,7 +259,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
           <Button
             variant="ghost"
             size="sm"
-            className="h-9 text-[12px] text-slate-500"
+            className="h-9 text-[12px] text-text-muted"
             onClick={() => {
               setStatusFilter("all");
               setSegmentFilter("all");
@@ -272,23 +272,23 @@ export function CustomersClient({ customers }: CustomersClientProps) {
       </div>
 
       {/* Table */}
-      <Card className="border-slate-200 shadow-none animate-fade-in-up stagger-3">
+      <Card className="border-border-default shadow-none animate-fade-in-up stagger-3">
         <Table>
           <TableHeader>
-            <TableRow className="hover:bg-transparent border-slate-200">
+            <TableRow className="hover:bg-transparent border-border-default">
               <TableHead
-                className="text-[11px] font-medium tracking-wide text-slate-500 uppercase cursor-pointer select-none"
+                className="text-[11px] font-medium tracking-wide text-text-muted uppercase cursor-pointer select-none"
                 onClick={() => handleSort("full_name")}
               >
                 <span className="flex items-center">
                   Customer <SortIcon columnKey="full_name" />
                 </span>
               </TableHead>
-              <TableHead className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+              <TableHead className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
                 Email
               </TableHead>
               <TableHead
-                className="text-[11px] font-medium tracking-wide text-slate-500 uppercase cursor-pointer select-none text-right"
+                className="text-[11px] font-medium tracking-wide text-text-muted uppercase cursor-pointer select-none text-right"
                 onClick={() => handleSort("totalRevenue")}
               >
                 <span className="flex items-center justify-end">
@@ -296,7 +296,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
                 </span>
               </TableHead>
               <TableHead
-                className="text-[11px] font-medium tracking-wide text-slate-500 uppercase cursor-pointer select-none text-right"
+                className="text-[11px] font-medium tracking-wide text-text-muted uppercase cursor-pointer select-none text-right"
                 onClick={() => handleSort("purchaseCount")}
               >
                 <span className="flex items-center justify-end">
@@ -304,20 +304,20 @@ export function CustomersClient({ customers }: CustomersClientProps) {
                 </span>
               </TableHead>
               <TableHead
-                className="text-[11px] font-medium tracking-wide text-slate-500 uppercase cursor-pointer select-none"
+                className="text-[11px] font-medium tracking-wide text-text-muted uppercase cursor-pointer select-none"
                 onClick={() => handleSort("lastActivityDate")}
               >
                 <span className="flex items-center">
                   Last Activity <SortIcon columnKey="lastActivityDate" />
                 </span>
               </TableHead>
-              <TableHead className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+              <TableHead className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
                 Status
               </TableHead>
-              <TableHead className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+              <TableHead className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
                 Segment
               </TableHead>
-              <TableHead className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+              <TableHead className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
                 Sources
               </TableHead>
             </TableRow>
@@ -326,27 +326,27 @@ export function CustomersClient({ customers }: CustomersClientProps) {
             {filtered.map((customer) => (
               <TableRow
                 key={customer.id}
-                className="cursor-pointer border-slate-100 hover:bg-slate-50/50 transition-colors"
+                className="cursor-pointer border-border-muted hover:bg-surface-elevated/50 transition-colors"
                 onClick={() => handleRowClick(customer.id)}
               >
                 <TableCell>
-                  <p className="text-[13px] font-medium text-slate-900">
+                  <p className="text-[13px] font-medium text-text-primary">
                     {customer.full_name || "Unknown"}
                   </p>
                 </TableCell>
-                <TableCell className="text-[13px] text-slate-600">
+                <TableCell className="text-[13px] text-text-secondary">
                   {customer.email || "-"}
                 </TableCell>
-                <TableCell className="text-right text-[13px] font-medium text-slate-900 tabular-nums">
+                <TableCell className="text-right text-[13px] font-medium text-text-primary tabular-nums">
                   $
                   {customer.totalRevenue.toLocaleString("en-US", {
                     minimumFractionDigits: 0,
                   })}
                 </TableCell>
-                <TableCell className="text-right text-[13px] text-slate-600 tabular-nums">
+                <TableCell className="text-right text-[13px] text-text-secondary tabular-nums">
                   {customer.purchaseCount}
                 </TableCell>
-                <TableCell className="text-[13px] text-slate-600">
+                <TableCell className="text-[13px] text-text-secondary">
                   {customer.lastActivityDate
                     ? new Date(customer.lastActivityDate).toLocaleDateString(
                         "en-US",
@@ -367,7 +367,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
               <TableRow>
                 <TableCell
                   colSpan={8}
-                  className="h-24 text-center text-[13px] text-slate-400"
+                  className="h-24 text-center text-[13px] text-text-muted"
                 >
                   No customers match your filters.
                 </TableCell>
@@ -382,16 +382,16 @@ export function CustomersClient({ customers }: CustomersClientProps) {
         <SheetContent className="w-[480px] sm:w-[540px] overflow-y-auto">
           {loadingDetail && (
             <div className="flex items-center justify-center h-64">
-              <Loader2 className="h-6 w-6 text-slate-400 animate-spin" />
+              <Loader2 className="h-6 w-6 text-text-muted animate-spin" />
             </div>
           )}
           {!loadingDetail && selectedDetail && (
             <div className="px-6 pb-6">
               <SheetHeader className="pb-4 px-0">
-                <SheetTitle className="text-lg font-semibold text-slate-900">
+                <SheetTitle className="text-lg font-semibold text-text-primary">
                   {selectedDetail.customer.full_name || "Unknown Customer"}
                 </SheetTitle>
-                <p className="text-[12px] text-slate-400">
+                <p className="text-[12px] text-text-muted">
                   {selectedDetail.customer.email || "No email"}
                 </p>
                 {selectedDetail.customer.sources.length > 0 && (
@@ -399,7 +399,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
                     {selectedDetail.customer.sources.map((s) => {
                       const info = SOURCE_LABELS[s] ?? {
                         label: s,
-                        color: "bg-slate-100 text-slate-600",
+                        color: "bg-surface-muted text-text-secondary",
                       };
                       return (
                         <Badge
@@ -416,29 +416,29 @@ export function CustomersClient({ customers }: CustomersClientProps) {
               </SheetHeader>
 
               <div className="grid grid-cols-3 gap-3 mb-6">
-                <Card className="border-slate-200 shadow-none">
+                <Card className="border-border-default shadow-none">
                   <CardContent className="p-3">
-                    <p className="text-[10px] font-medium tracking-wide text-slate-500 uppercase mb-1">
+                    <p className="text-[10px] font-medium tracking-wide text-text-muted uppercase mb-1">
                       Revenue
                     </p>
-                    <p className="text-[16px] font-semibold text-slate-900 tabular-nums">
+                    <p className="text-[16px] font-semibold text-text-primary tabular-nums">
                       ${selectedDetail.customer.totalRevenue.toLocaleString()}
                     </p>
                   </CardContent>
                 </Card>
-                <Card className="border-slate-200 shadow-none">
+                <Card className="border-border-default shadow-none">
                   <CardContent className="p-3">
-                    <p className="text-[10px] font-medium tracking-wide text-slate-500 uppercase mb-1">
+                    <p className="text-[10px] font-medium tracking-wide text-text-muted uppercase mb-1">
                       Purchases
                     </p>
-                    <p className="text-[16px] font-semibold text-slate-900 tabular-nums">
+                    <p className="text-[16px] font-semibold text-text-primary tabular-nums">
                       {selectedDetail.customer.purchaseCount}
                     </p>
                   </CardContent>
                 </Card>
-                <Card className="border-slate-200 shadow-none">
+                <Card className="border-border-default shadow-none">
                   <CardContent className="p-3">
-                    <p className="text-[10px] font-medium tracking-wide text-slate-500 uppercase mb-1">
+                    <p className="text-[10px] font-medium tracking-wide text-text-muted uppercase mb-1">
                       Status
                     </p>
                     <div className="mt-0.5">
@@ -451,7 +451,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
               <Separator className="mb-6" />
 
               <div>
-                <h3 className="text-[13px] font-semibold text-slate-900 mb-4">
+                <h3 className="text-[13px] font-semibold text-text-primary mb-4">
                   Activity History
                 </h3>
                 <div className="space-y-3">
@@ -460,19 +460,19 @@ export function CustomersClient({ customers }: CustomersClientProps) {
                       TRANSACTION_ICONS[tx.type] ?? CreditCard;
                     const sourceInfo = SOURCE_LABELS[tx.source] ?? {
                       label: tx.source,
-                      color: "bg-slate-100 text-slate-600",
+                      color: "bg-surface-muted text-text-secondary",
                     };
                     return (
                       <div
                         key={tx.id}
-                        className="flex items-start justify-between rounded-lg border border-slate-100 p-3"
+                        className="flex items-start justify-between rounded-lg border border-border-muted p-3"
                       >
                         <div className="flex items-start gap-3 flex-1 min-w-0">
-                          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-50 mt-0.5">
-                            <Icon className="h-3.5 w-3.5 text-slate-500" />
+                          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-surface-elevated mt-0.5">
+                            <Icon className="h-3.5 w-3.5 text-text-muted" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-[13px] font-medium text-slate-900 truncate">
+                            <p className="text-[13px] font-medium text-text-primary truncate">
                               {tx.description}
                             </p>
                             <div className="flex items-center gap-2 mt-1">
@@ -482,7 +482,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
                               >
                                 {sourceInfo.label}
                               </Badge>
-                              <span className="text-[11px] text-slate-400">
+                              <span className="text-[11px] text-text-muted">
                                 {new Date(tx.date).toLocaleDateString(
                                   "en-US",
                                   {
@@ -496,7 +496,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
                           </div>
                         </div>
                         {tx.amount !== null && (
-                          <p className="text-[14px] font-semibold text-slate-900 tabular-nums ml-4">
+                          <p className="text-[14px] font-semibold text-text-primary tabular-nums ml-4">
                             $
                             {tx.amount.toLocaleString("en-US", {
                               minimumFractionDigits: 2,
@@ -507,7 +507,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
                     );
                   })}
                   {selectedDetail.transactions.length === 0 && (
-                    <p className="text-[13px] text-slate-400 text-center py-8">
+                    <p className="text-[13px] text-text-muted text-center py-8">
                       No activity history available.
                     </p>
                   )}
@@ -517,7 +517,7 @@ export function CustomersClient({ customers }: CustomersClientProps) {
           )}
           {!loadingDetail && !selectedDetail && (
             <div className="flex items-center justify-center h-64">
-              <p className="text-[13px] text-slate-400">
+              <p className="text-[13px] text-text-muted">
                 Customer not found.
               </p>
             </div>

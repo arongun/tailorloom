@@ -101,10 +101,10 @@ export default function ImportsPage() {
     <div className="p-8 max-w-[1400px]">
       {/* Header */}
       <div className="mb-8 animate-fade-in">
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-900">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-text-primary">
           Import History
         </h1>
-        <p className="mt-1 text-[13px] text-slate-500">
+        <p className="mt-1 text-[13px] text-text-muted">
           View past CSV imports and their status
         </p>
       </div>
@@ -122,26 +122,26 @@ export default function ImportsPage() {
             <SelectItem value="passline">PassLine</SelectItem>
           </SelectContent>
         </Select>
-        <span className="text-[12px] text-slate-400 ml-auto">
+        <span className="text-[12px] text-text-muted ml-auto">
           {total} {total === 1 ? "import" : "imports"}
         </span>
       </div>
 
       {/* Table */}
-      <Card className="border-slate-200 shadow-none animate-fade-in-up stagger-3">
+      <Card className="border-border-default shadow-none animate-fade-in-up stagger-3">
         {loading ? (
           <CardContent className="flex items-center justify-center py-16">
-            <Loader2 className="h-5 w-5 text-slate-400 animate-spin" />
+            <Loader2 className="h-5 w-5 text-text-muted animate-spin" />
           </CardContent>
         ) : imports.length === 0 ? (
           <CardContent className="flex flex-col items-center justify-center py-16 px-8">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-slate-100 mb-4">
-              <History className="h-6 w-6 text-slate-400" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-surface-muted mb-4">
+              <History className="h-6 w-6 text-text-muted" />
             </div>
-            <p className="text-[14px] font-medium text-slate-700 mb-1">
+            <p className="text-[14px] font-medium text-text-secondary mb-1">
               No Imports Yet
             </p>
-            <p className="text-[13px] text-slate-400 text-center max-w-md">
+            <p className="text-[13px] text-text-muted text-center max-w-md">
               Import history will appear here once you upload CSV files.
             </p>
           </CardContent>
@@ -168,15 +168,15 @@ export default function ImportsPage() {
 
                   return (
                     <TableRow key={imp.id}>
-                      <TableCell className="text-[13px] font-medium text-slate-800 max-w-[200px] truncate">
+                      <TableCell className="text-[13px] font-medium text-text-primary max-w-[200px] truncate">
                         {imp.file_name}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">
-                          <div className={`flex h-5 w-5 items-center justify-center rounded ${src?.bg ?? "bg-slate-100"}`}>
-                            <SrcIcon className={`h-3 w-3 ${src?.color ?? "text-slate-500"}`} />
+                          <div className={`flex h-5 w-5 items-center justify-center rounded ${src?.bg ?? "bg-surface-muted"}`}>
+                            <SrcIcon className={`h-3 w-3 ${src?.color ?? "text-text-muted"}`} />
                           </div>
-                          <span className="text-[12px] text-slate-600">
+                          <span className="text-[12px] text-text-secondary">
                             {src?.label ?? imp.source}
                           </span>
                         </div>
@@ -186,19 +186,19 @@ export default function ImportsPage() {
                           {status.label}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-[13px] text-right tabular-nums text-slate-700">
+                      <TableCell className="text-[13px] text-right tabular-nums text-text-secondary">
                         {imp.total_rows}
                       </TableCell>
                       <TableCell className="text-[13px] text-right tabular-nums text-emerald-600">
                         {imp.imported_rows}
                       </TableCell>
-                      <TableCell className="text-[13px] text-right tabular-nums text-slate-500">
+                      <TableCell className="text-[13px] text-right tabular-nums text-text-muted">
                         {imp.skipped_rows}
                       </TableCell>
-                      <TableCell className={`text-[13px] text-right tabular-nums ${imp.error_rows > 0 ? "text-rose-600" : "text-slate-500"}`}>
+                      <TableCell className={`text-[13px] text-right tabular-nums ${imp.error_rows > 0 ? "text-rose-600" : "text-text-muted"}`}>
                         {imp.error_rows}
                       </TableCell>
-                      <TableCell className="text-[12px] text-slate-500">
+                      <TableCell className="text-[12px] text-text-muted">
                         {formatDate(imp.completed_at ?? imp.started_at ?? imp.created_at)}
                       </TableCell>
                     </TableRow>
@@ -209,8 +209,8 @@ export default function ImportsPage() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
-                <span className="text-[12px] text-slate-400">
+              <div className="flex items-center justify-between px-4 py-3 border-t border-border-muted">
+                <span className="text-[12px] text-text-muted">
                   Page {page + 1} of {totalPages}
                 </span>
                 <div className="flex items-center gap-1">

@@ -155,8 +155,8 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-      <Card className="w-full max-w-[400px] border-slate-200 shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-surface-elevated p-4">
+      <Card className="w-full max-w-[400px] border-border-default shadow-sm">
         <CardContent className="p-8">
           {/* Brand */}
           <div className="flex flex-col items-center mb-8">
@@ -165,7 +165,7 @@ export default function LoginPage() {
               alt="TailorLoom"
               className="mb-3 h-10 w-auto"
             />
-            <p className="text-[13px] text-slate-500">
+            <p className="text-[13px] text-text-muted">
               Revenue Intelligence Console
             </p>
           </div>
@@ -176,7 +176,7 @@ export default function LoginPage() {
               <Button
                 onClick={handleGoogleLogin}
                 variant="outline"
-                className="w-full h-10 text-[13px] font-medium border-slate-200 hover:bg-slate-50"
+                className="w-full h-10 text-[13px] font-medium border-border-default hover:bg-surface-elevated"
               >
                 <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                   <path
@@ -201,7 +201,7 @@ export default function LoginPage() {
 
               <div className="flex items-center gap-3 my-6">
                 <Separator className="flex-1" />
-                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                <span className="text-[11px] font-medium text-text-muted uppercase tracking-wider">
                   or
                 </span>
                 <Separator className="flex-1" />
@@ -214,7 +214,7 @@ export default function LoginPage() {
                   placeholder="Enter your email address"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="h-10 text-[13px] border-slate-200"
+                  className="h-10 text-[13px] border-border-default"
                   required
                 />
                 <Button
@@ -229,7 +229,7 @@ export default function LoginPage() {
               {/* Dev mode */}
               <div className="flex items-center gap-3 my-6">
                 <Separator className="flex-1" />
-                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                <span className="text-[11px] font-medium text-text-muted uppercase tracking-wider">
                   dev
                 </span>
                 <Separator className="flex-1" />
@@ -241,13 +241,13 @@ export default function LoginPage() {
                   placeholder="Dev password"
                   value={devPassword}
                   onChange={(e) => setDevPassword(e.target.value)}
-                  className="h-10 text-[13px] border-slate-200"
+                  className="h-10 text-[13px] border-border-default"
                   required
                 />
                 <Button
                   type="submit"
                   variant="outline"
-                  className="h-10 text-[13px] font-medium border-slate-200 shrink-0"
+                  className="h-10 text-[13px] font-medium border-border-default shrink-0"
                   disabled={loading}
                 >
                   {loading ? "..." : "Go"}
@@ -262,19 +262,19 @@ export default function LoginPage() {
                   setStep("email");
                   setOtp(["", "", "", "", "", ""]);
                 }}
-                className="flex items-center gap-1.5 text-[12px] text-slate-500 hover:text-slate-700 transition-colors -mt-2 mb-4"
+                className="flex items-center gap-1.5 text-[12px] text-text-muted hover:text-text-secondary transition-colors -mt-2 mb-4"
               >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Back
               </button>
 
               <div className="text-center">
-                <p className="text-[14px] font-medium text-slate-900">
+                <p className="text-[14px] font-medium text-text-primary">
                   Enter verification code
                 </p>
-                <p className="text-[12px] text-slate-500 mt-1">
+                <p className="text-[12px] text-text-muted mt-1">
                   We sent a 6-digit code to{" "}
-                  <span className="font-medium text-slate-700">{email}</span>
+                  <span className="font-medium text-text-secondary">{email}</span>
                 </p>
               </div>
 
@@ -294,13 +294,13 @@ export default function LoginPage() {
                     onChange={(e) => handleOtpChange(i, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(i, e)}
                     disabled={loading}
-                    className="w-11 h-12 text-center text-lg font-semibold text-slate-900 border border-slate-200 rounded-lg bg-white focus:border-slate-900 focus:ring-1 focus:ring-slate-900 outline-none transition-all disabled:opacity-50"
+                    className="w-11 h-12 text-center text-lg font-semibold text-text-primary border border-border-default rounded-lg bg-surface focus:border-surface-active focus:ring-1 focus:ring-surface-active outline-none transition-all disabled:opacity-50"
                   />
                 ))}
               </div>
 
               {loading && (
-                <p className="text-center text-[12px] text-slate-500">
+                <p className="text-center text-[12px] text-text-muted">
                   Verifying...
                 </p>
               )}
@@ -309,14 +309,14 @@ export default function LoginPage() {
                 <button
                   onClick={handleResend}
                   disabled={loading}
-                  className="text-[12px] text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-50"
+                  className="text-[12px] text-text-muted hover:text-text-secondary transition-colors disabled:opacity-50"
                 >
                   Didn&apos;t get a code? <span className="font-medium underline">Resend</span>
                 </button>
               </div>
             </div>
           )}
-          <p className="text-center text-[10px] text-slate-300 mt-8 tracking-wide">
+          <p className="text-center text-[10px] text-text-muted mt-8 tracking-wide">
             Powered by TailorLoom
           </p>
         </CardContent>

@@ -105,10 +105,10 @@ export default function ConflictsPage() {
     <div className="p-8 max-w-[1400px]">
       {/* Header */}
       <div className="mb-8 animate-fade-in">
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-900">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-text-primary">
           Identity Conflicts
         </h1>
-        <p className="mt-1 text-[13px] text-slate-500">
+        <p className="mt-1 text-[13px] text-text-muted">
           Review flagged customer identity matches that need manual confirmation
         </p>
       </div>
@@ -132,26 +132,26 @@ export default function ConflictsPage() {
             <SelectItem value="dismissed">Dismissed</SelectItem>
           </SelectContent>
         </Select>
-        <span className="text-[12px] text-slate-400 ml-auto">
+        <span className="text-[12px] text-text-muted ml-auto">
           {total} {total === 1 ? "conflict" : "conflicts"}
         </span>
       </div>
 
       {/* Table */}
-      <Card className="border-slate-200 shadow-none animate-fade-in-up stagger-3">
+      <Card className="border-border-default shadow-none animate-fade-in-up stagger-3">
         {loading ? (
           <CardContent className="flex items-center justify-center py-16">
-            <Loader2 className="h-5 w-5 text-slate-400 animate-spin" />
+            <Loader2 className="h-5 w-5 text-text-muted animate-spin" />
           </CardContent>
         ) : conflicts.length === 0 ? (
           <CardContent className="flex flex-col items-center justify-center py-16 px-8">
             <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-amber-50 mb-4">
               <AlertTriangle className="h-6 w-6 text-amber-500" />
             </div>
-            <p className="text-[14px] font-medium text-slate-700 mb-1">
+            <p className="text-[14px] font-medium text-text-secondary mb-1">
               No Conflicts
             </p>
-            <p className="text-[13px] text-slate-400 text-center max-w-md">
+            <p className="text-[13px] text-text-muted text-center max-w-md">
               Identity conflicts will appear here when the system detects
               potential customer matches that need your review.
             </p>
@@ -183,20 +183,20 @@ export default function ConflictsPage() {
                     <TableRow key={conflict.id}>
                       <TableCell>
                         <div>
-                          <p className="text-[13px] font-medium text-slate-800 truncate max-w-[180px]">
+                          <p className="text-[13px] font-medium text-text-primary truncate max-w-[180px]">
                             {conflict.customer_a_name ?? "Unknown"}
                           </p>
-                          <p className="text-[11px] text-slate-400 truncate max-w-[180px]">
+                          <p className="text-[11px] text-text-muted truncate max-w-[180px]">
                             {conflict.customer_a_email ?? "No email"}
                           </p>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div>
-                          <p className="text-[13px] font-medium text-slate-800 truncate max-w-[180px]">
+                          <p className="text-[13px] font-medium text-text-primary truncate max-w-[180px]">
                             {conflict.customer_b_name ?? "Unknown"}
                           </p>
-                          <p className="text-[11px] text-slate-400 truncate max-w-[180px]">
+                          <p className="text-[11px] text-text-muted truncate max-w-[180px]">
                             {conflict.customer_b_email ?? "No email"}
                           </p>
                         </div>
@@ -217,7 +217,7 @@ export default function ConflictsPage() {
                           {status.label}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-[12px] text-slate-500">
+                      <TableCell className="text-[12px] text-text-muted">
                         {formatDate(conflict.created_at)}
                       </TableCell>
                       <TableCell className="text-right">
@@ -244,7 +244,7 @@ export default function ConflictsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 text-[11px] text-slate-500 hover:text-slate-700"
+                              className="h-7 text-[11px] text-text-muted hover:text-text-secondary"
                               disabled={isResolvingThis}
                               onClick={() =>
                                 handleResolve(conflict.id, "dismissed")
@@ -262,7 +262,7 @@ export default function ConflictsPage() {
                           </span>
                         )}
                         {conflict.status === "dismissed" && (
-                          <span className="text-[11px] text-slate-400">
+                          <span className="text-[11px] text-text-muted">
                             Dismissed
                           </span>
                         )}
@@ -275,8 +275,8 @@ export default function ConflictsPage() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
-                <span className="text-[12px] text-slate-400">
+              <div className="flex items-center justify-between px-4 py-3 border-t border-border-muted">
+                <span className="text-[12px] text-text-muted">
                   Page {page + 1} of {totalPages}
                 </span>
                 <div className="flex items-center gap-1">
@@ -309,7 +309,7 @@ export default function ConflictsPage() {
 }
 
 function ConfidencePill({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-[12px] text-slate-400">—</span>;
+  if (value === null) return <span className="text-[12px] text-text-muted">&mdash;</span>;
 
   const pct = Math.round(value * 100);
   const color =

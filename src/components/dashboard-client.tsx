@@ -135,8 +135,8 @@ export function DashboardClient({
       title: "Active Customers",
       value: metrics.activeCustomers,
       icon: Users,
-      iconBg: "bg-slate-100",
-      iconColor: "text-slate-600",
+      iconBg: "bg-surface-muted",
+      iconColor: "text-text-secondary",
     },
     {
       title: "At-Risk Customers",
@@ -150,8 +150,8 @@ export function DashboardClient({
       title: "High-Value Customers",
       value: metrics.highValueCustomers,
       icon: TrendingUp,
-      iconBg: "bg-slate-100",
-      iconColor: "text-slate-600",
+      iconBg: "bg-surface-muted",
+      iconColor: "text-text-secondary",
     },
     {
       title: "Purchase Frequency",
@@ -168,10 +168,10 @@ export function DashboardClient({
     <div className="p-8 max-w-[1400px]">
       {/* Header */}
       <div className="mb-8 animate-fade-in">
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-slate-900">
+        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-text-primary">
           Dashboard
         </h1>
-        <p className="mt-1 text-[13px] text-slate-500">
+        <p className="mt-1 text-[13px] text-text-muted">
           Revenue overview and customer intelligence
         </p>
       </div>
@@ -181,10 +181,10 @@ export function DashboardClient({
         {cards.map((card, idx) => (
           <Card
             key={card.title}
-            className={`animate-fade-in-up stagger-${idx + 1} border-slate-200 shadow-none hover:shadow-sm transition-shadow duration-200`}
+            className={`animate-fade-in-up stagger-${idx + 1} border-border-default shadow-none hover:shadow-sm transition-shadow duration-200`}
           >
             <CardHeader className="flex flex-row items-center justify-between pb-2 pt-5 px-5">
-              <CardTitle className="text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+              <CardTitle className="text-[11px] font-medium tracking-wide text-text-muted uppercase">
                 {card.title}
               </CardTitle>
               <div
@@ -197,7 +197,7 @@ export function DashboardClient({
               </div>
             </CardHeader>
             <CardContent className="px-5 pb-5">
-              <div className="text-2xl font-semibold tracking-[-0.02em] text-slate-900">
+              <div className="text-2xl font-semibold tracking-[-0.02em] text-text-primary">
                 <AnimatedNumber
                   value={card.value}
                   prefix={card.prefix}
@@ -218,7 +218,7 @@ export function DashboardClient({
                     {card.change >= 0 ? "+" : ""}
                     {card.change.toFixed(1)}%
                   </Badge>
-                  <span className="text-[11px] text-slate-400">
+                  <span className="text-[11px] text-text-muted">
                     vs prior period
                   </span>
                 </div>
@@ -235,27 +235,27 @@ export function DashboardClient({
 
       {/* Settings Panel */}
       <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <CollapsibleTrigger className="mb-4 flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-left hover:bg-slate-50 transition-colors animate-fade-in stagger-5">
-          <Settings2 className="h-4 w-4 text-slate-400" />
-          <span className="text-[13px] font-medium text-slate-700 flex-1">
+        <CollapsibleTrigger className="mb-4 flex w-full items-center gap-2 rounded-lg border border-border-default bg-surface px-4 py-3 text-left hover:bg-surface-elevated transition-colors animate-fade-in stagger-5">
+          <Settings2 className="h-4 w-4 text-text-muted" />
+          <span className="text-[13px] font-medium text-text-secondary flex-1">
             Intelligence Parameters
           </span>
           {savingConfig && (
-            <Loader2 className="h-3.5 w-3.5 text-slate-400 animate-spin" />
+            <Loader2 className="h-3.5 w-3.5 text-text-muted animate-spin" />
           )}
           <ChevronDown
-            className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
+            className={`h-4 w-4 text-text-muted transition-transform duration-200 ${
               settingsOpen ? "rotate-180" : ""
             }`}
           />
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <Card className="mb-6 border-slate-200 shadow-none">
+          <Card className="mb-6 border-border-default shadow-none">
             <CardContent className="p-6">
               <div className="grid grid-cols-2 gap-8">
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <label className="text-[13px] font-medium text-slate-700">
+                    <label className="text-[13px] font-medium text-text-secondary">
                       Churn Threshold
                     </label>
                     <Badge
@@ -274,14 +274,14 @@ export function DashboardClient({
                     step={5}
                     className="w-full"
                   />
-                  <p className="mt-2 text-[11px] text-slate-400">
+                  <p className="mt-2 text-[11px] text-text-muted">
                     Days since last activity before a customer is flagged as
                     at-risk
                   </p>
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <label className="text-[13px] font-medium text-slate-700">
+                    <label className="text-[13px] font-medium text-text-secondary">
                       High-Value Threshold
                     </label>
                     <Badge
@@ -300,7 +300,7 @@ export function DashboardClient({
                     step={100}
                     className="w-full"
                   />
-                  <p className="mt-2 text-[11px] text-slate-400">
+                  <p className="mt-2 text-[11px] text-text-muted">
                     Minimum total revenue to classify a customer as high-value
                   </p>
                 </div>
@@ -311,23 +311,23 @@ export function DashboardClient({
       </Collapsible>
 
       {/* Revenue Chart */}
-      <Card className="border-slate-200 shadow-none animate-fade-in-up stagger-5">
+      <Card className="border-border-default shadow-none animate-fade-in-up stagger-5">
         <CardHeader className="px-6 pt-6 pb-2">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-[14px] font-semibold text-slate-900">
+              <CardTitle className="text-[14px] font-semibold text-text-primary">
                 Revenue Trend
               </CardTitle>
-              <p className="text-[12px] text-slate-500 mt-0.5">
+              <p className="text-[12px] text-text-muted mt-0.5">
                 Monthly revenue over time
               </p>
             </div>
             <div className="flex items-center gap-2">
               {loadingTrend && (
-                <Loader2 className="h-3.5 w-3.5 text-slate-400 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 text-text-muted animate-spin" />
               )}
               <Select value={trendRange} onValueChange={handleRangeChange}>
-                <SelectTrigger className="w-[130px] text-[12px] h-8 border-slate-200 bg-white">
+                <SelectTrigger className="w-[130px] text-[12px] h-8 border-border-default bg-surface">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

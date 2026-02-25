@@ -109,11 +109,11 @@ function SourcePicker({
             <button
               key={r.source}
               onClick={() => onSelect(r.source)}
-              className="flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-[12px] font-medium text-slate-700 hover:border-slate-300 hover:shadow-sm transition-all"
+              className="flex items-center gap-2 rounded-lg border border-amber-200 bg-surface px-3 py-2 text-[12px] font-medium text-text-secondary hover:border-border-default hover:shadow-sm transition-all"
             >
               <Icon className={cn("h-4 w-4", meta.color)} strokeWidth={1.8} />
               {meta.label}
-              <span className="text-[10px] text-slate-400">
+              <span className="text-[10px] text-text-muted">
                 {Math.round(r.confidence * 100)}%
               </span>
             </button>
@@ -173,8 +173,8 @@ function ColumnDropdown({
         className={cn(
           "flex items-center gap-1.5 w-full text-left px-3 py-2 rounded-md transition-all text-[11px] font-semibold uppercase tracking-wider",
           isMapped
-            ? "text-slate-700 hover:bg-slate-100"
-            : "text-slate-400 hover:bg-slate-50 italic"
+            ? "text-text-secondary hover:bg-surface-muted"
+            : "text-text-muted hover:bg-surface-elevated italic"
         )}
       >
         <ConfidenceDot confidence={confidence} />
@@ -188,13 +188,13 @@ function ColumnDropdown({
       </button>
 
       <div className="px-3 pb-1.5">
-        <span className="text-[10px] font-mono text-slate-400 truncate block">
+        <span className="text-[10px] font-mono text-text-muted truncate block">
           {csvHeader}
         </span>
       </div>
 
       {open && (
-        <div className="absolute top-full left-0 z-50 mt-1 w-56 rounded-lg border border-slate-200 bg-white shadow-lg shadow-slate-200/50 py-1 animate-fade-in">
+        <div className="absolute top-full left-0 z-50 mt-1 w-56 rounded-lg border border-border-default bg-surface shadow-lg shadow-border-default/50 py-1 animate-fade-in">
           <button
             onClick={() => {
               onSelect(csvHeader, null);
@@ -203,18 +203,18 @@ function ColumnDropdown({
             className={cn(
               "flex items-center gap-2 w-full px-3 py-2 text-[12px] text-left transition-colors",
               !currentField
-                ? "bg-slate-50 text-slate-700 font-medium"
-                : "text-slate-500 hover:bg-slate-50"
+                ? "bg-surface-elevated text-text-secondary font-medium"
+                : "text-text-muted hover:bg-surface-elevated"
             )}
           >
-            <Minus className="h-3.5 w-3.5 text-slate-400" />
+            <Minus className="h-3.5 w-3.5 text-text-muted" />
             <span className="italic">Skip this column</span>
             {!currentField && (
-              <Check className="ml-auto h-3.5 w-3.5 text-slate-500" />
+              <Check className="ml-auto h-3.5 w-3.5 text-text-muted" />
             )}
           </button>
 
-          <div className="my-1 h-px bg-slate-100" />
+          <div className="my-1 h-px bg-surface-muted" />
 
           {schema.fields.map((field) => {
             const isUsed =
@@ -231,8 +231,8 @@ function ColumnDropdown({
                 className={cn(
                   "flex items-center gap-2 w-full px-3 py-2 text-[12px] text-left transition-colors",
                   isSelected
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-700 hover:bg-slate-50"
+                    ? "bg-surface-active text-text-on-active"
+                    : "text-text-secondary hover:bg-surface-elevated"
                 )}
               >
                 <span className="truncate flex-1">
@@ -249,7 +249,7 @@ function ColumnDropdown({
                   )}
                 </span>
                 {isUsed && (
-                  <span className="text-[10px] text-slate-400">in use</span>
+                  <span className="text-[10px] text-text-muted">in use</span>
                 )}
                 {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
               </button>
@@ -515,8 +515,8 @@ export function UploadMapper({
           className={cn(
             "group cursor-pointer rounded-xl border-2 border-dashed transition-all duration-200",
             isDragging
-              ? "border-slate-900 bg-slate-50"
-              : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
+              ? "border-surface-active bg-surface-elevated"
+              : "border-border-default bg-surface hover:border-border-default hover:bg-surface-elevated/50"
           )}
         >
           <div className="flex flex-col items-center justify-center py-16 px-8">
@@ -524,20 +524,20 @@ export function UploadMapper({
               className={cn(
                 "flex h-12 w-12 items-center justify-center rounded-xl transition-colors",
                 isDragging
-                  ? "bg-slate-900 text-white"
-                  : "bg-slate-100 text-slate-400 group-hover:bg-slate-200 group-hover:text-slate-500"
+                  ? "bg-surface-active text-text-on-active"
+                  : "bg-surface-muted text-text-muted group-hover:bg-surface-muted group-hover:text-text-muted"
               )}
             >
               <Upload className="h-5 w-5" strokeWidth={1.8} />
             </div>
-            <p className="mt-4 text-[13px] font-medium text-slate-700">
+            <p className="mt-4 text-[13px] font-medium text-text-secondary">
               {isDragging
                 ? "Drop your file here"
                 : "Drag & drop a CSV from Stripe, Calendly, PassLine, POS, or WeTravel"}
             </p>
-            <p className="mt-1 text-[12px] text-slate-400">
+            <p className="mt-1 text-[12px] text-text-muted">
               or{" "}
-              <span className="font-medium text-slate-500 underline underline-offset-2">
+              <span className="font-medium text-text-muted underline underline-offset-2">
                 browse files
               </span>{" "}
               — source type is auto-detected
@@ -561,11 +561,11 @@ export function UploadMapper({
         )}
         {/* Sample CSVs */}
         <div className="mt-4 flex items-center justify-center gap-4 flex-wrap">
-          <span className="text-[11px] text-slate-400">Try a sample:</span>
+          <span className="text-[11px] text-text-muted">Try a sample:</span>
           <a
             href="/samples/stripe_dummy.csv"
             download
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
           >
             <Download className="h-3 w-3" />
             Stripe
@@ -573,7 +573,7 @@ export function UploadMapper({
           <a
             href="/samples/calendly_dummy.csv"
             download
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
           >
             <Download className="h-3 w-3" />
             Calendly
@@ -581,7 +581,7 @@ export function UploadMapper({
           <a
             href="/samples/passline_dummy.csv"
             download
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
           >
             <Download className="h-3 w-3" />
             PassLine
@@ -589,7 +589,7 @@ export function UploadMapper({
           <a
             href="/samples/costco_pos_dummy.csv"
             download
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
           >
             <Download className="h-3 w-3" />
             POS
@@ -597,7 +597,7 @@ export function UploadMapper({
           <a
             href="/samples/wetravel_dummy.csv"
             download
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
           >
             <Download className="h-3 w-3" />
             WeTravel
@@ -642,10 +642,10 @@ export function UploadMapper({
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <p className="text-[13px] font-medium text-slate-900 truncate">
+              <p className="text-[13px] font-medium text-text-primary truncate">
                 {file.name}
               </p>
-              <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+              <span className="inline-flex items-center gap-1 rounded-md bg-surface-muted px-1.5 py-0.5 text-[10px] font-medium text-text-secondary">
                 <sourceMeta.icon
                   className={cn("h-3 w-3", sourceMeta.color)}
                   strokeWidth={2}
@@ -653,7 +653,7 @@ export function UploadMapper({
                 {sourceMeta.label}
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-text-muted">
               {totalRows} rows &middot;{" "}
               {(file.size / 1024).toFixed(1)} KB &middot;{" "}
               <span
@@ -672,7 +672,7 @@ export function UploadMapper({
             variant="ghost"
             size="icon"
             onClick={clearFile}
-            className="h-7 w-7 shrink-0 text-slate-400 hover:text-slate-600"
+            className="h-7 w-7 shrink-0 text-text-muted hover:text-text-secondary"
           >
             <X className="h-3.5 w-3.5" />
           </Button>
@@ -690,7 +690,7 @@ export function UploadMapper({
                   e.target.value = "";
                 }}
                 defaultValue=""
-                className="h-8 rounded-md border border-slate-200 bg-white px-2 pr-7 text-[11px] font-medium text-slate-600 appearance-none cursor-pointer hover:border-slate-300 transition-colors"
+                className="h-8 rounded-md border border-border-default bg-surface px-2 pr-7 text-[11px] font-medium text-text-secondary appearance-none cursor-pointer hover:border-border-default transition-colors"
               >
                 <option value="" disabled>
                   Load template
@@ -701,14 +701,14 @@ export function UploadMapper({
                   </option>
                 ))}
               </select>
-              <FolderOpen className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400 pointer-events-none" />
+              <FolderOpen className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 text-text-muted pointer-events-none" />
             </div>
           )}
           <Button
             variant="outline"
             size="sm"
             onClick={() => setSaveDialogOpen(true)}
-            className="h-8 text-[11px] border-slate-200"
+            className="h-8 text-[11px] border-border-default"
           >
             <Save className="mr-1 h-3 w-3" />
             Save
@@ -728,12 +728,12 @@ export function UploadMapper({
       )}
 
       {/* Data table */}
-      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+      <div className="rounded-xl border border-border-default bg-surface overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-slate-100">
-                <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-10 border-r border-slate-100">
+              <tr className="border-b border-border-muted">
+                <th className="sticky left-0 z-10 bg-surface-elevated px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-wider w-10 border-r border-border-muted">
                   #
                 </th>
                 {headers.map((header) => {
@@ -744,8 +744,8 @@ export function UploadMapper({
                     <th
                       key={header}
                       className={cn(
-                        "bg-slate-50/80 min-w-[160px] max-w-[220px] border-r border-slate-50 last:border-r-0",
-                        !currentField && "bg-slate-50/40"
+                        "bg-surface-elevated/80 min-w-[160px] max-w-[220px] border-r border-border-muted last:border-r-0",
+                        !currentField && "bg-surface-elevated/40"
                       )}
                     >
                       <ColumnDropdown
@@ -765,9 +765,9 @@ export function UploadMapper({
               {rows.map((row, i) => (
                 <tr
                   key={i}
-                  className="border-b border-slate-50 last:border-b-0 hover:bg-slate-50/30 transition-colors"
+                  className="border-b border-border-muted last:border-b-0 hover:bg-surface-elevated/30 transition-colors"
                 >
-                  <td className="sticky left-0 z-10 bg-white px-3 py-2.5 text-[11px] font-mono text-slate-300 border-r border-slate-100 tabular-nums">
+                  <td className="sticky left-0 z-10 bg-surface px-3 py-2.5 text-[11px] font-mono text-text-muted border-r border-border-muted tabular-nums">
                     {i + 1}
                   </td>
                   {headers.map((header) => {
@@ -787,8 +787,8 @@ export function UploadMapper({
                       <td
                         key={header}
                         className={cn(
-                          "px-3 py-2.5 text-[12px] max-w-[220px] border-r border-slate-50 last:border-r-0",
-                          isMapped ? "text-slate-700" : "text-slate-300",
+                          "px-3 py-2.5 text-[12px] max-w-[220px] border-r border-border-muted last:border-r-0",
+                          isMapped ? "text-text-secondary" : "text-text-muted",
                           cellWarning && "bg-rose-50/40"
                         )}
                       >
@@ -802,16 +802,16 @@ export function UploadMapper({
           </table>
         </div>
 
-        <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-2 flex items-center justify-between">
+        <div className="border-t border-border-muted bg-surface-elevated/50 px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <p className="text-[11px] text-slate-400">
+            <p className="text-[11px] text-text-muted">
               Showing {rows.length} of {totalRows} rows
             </p>
             {totalRows > 50 && (
               <select
                 value={visibleRowCount}
                 onChange={(e) => setVisibleRowCount(Number(e.target.value))}
-                className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[11px] text-slate-600 cursor-pointer hover:border-slate-300 transition-colors"
+                className="h-6 rounded border border-border-default bg-surface px-1.5 text-[11px] text-text-secondary cursor-pointer hover:border-border-default transition-colors"
               >
                 <option value={50}>50 rows</option>
                 <option value={100}>100 rows</option>
@@ -821,7 +821,7 @@ export function UploadMapper({
               </select>
             )}
           </div>
-          <div className="flex items-center gap-4 text-[11px] text-slate-400">
+          <div className="flex items-center gap-4 text-[11px] text-text-muted">
             <span className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
               High match
@@ -851,12 +851,12 @@ export function UploadMapper({
               placeholder="e.g. Stripe Default Export"
               value={templateName}
               onChange={(e) => setTemplateName(e.target.value)}
-              className="h-9 text-[13px] border-slate-200"
+              className="h-9 text-[13px] border-border-default"
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSaveTemplate();
               }}
             />
-            <p className="mt-2 text-[11px] text-slate-400">
+            <p className="mt-2 text-[11px] text-text-muted">
               Auto-loads when you upload a similar CSV next time.
             </p>
           </div>
@@ -889,14 +889,14 @@ export function UploadMapper({
 function FileBar({ file, onClear }: { file: File; onClear: () => void }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 shrink-0">
-        <FileText className="h-4 w-4 text-slate-500" strokeWidth={1.8} />
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-muted shrink-0">
+        <FileText className="h-4 w-4 text-text-muted" strokeWidth={1.8} />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] font-medium text-slate-900 truncate">
+        <p className="text-[13px] font-medium text-text-primary truncate">
           {file.name}
         </p>
-        <p className="text-[11px] text-slate-400">
+        <p className="text-[11px] text-text-muted">
           {(file.size / 1024).toFixed(1)} KB
         </p>
       </div>
@@ -904,7 +904,7 @@ function FileBar({ file, onClear }: { file: File; onClear: () => void }) {
         variant="ghost"
         size="icon"
         onClick={onClear}
-        className="h-7 w-7 shrink-0 text-slate-400 hover:text-slate-600"
+        className="h-7 w-7 shrink-0 text-text-muted hover:text-text-secondary"
       >
         <X className="h-3.5 w-3.5" />
       </Button>
@@ -922,18 +922,18 @@ function RawPreview({
   totalRows: number;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+    <div className="rounded-xl border border-border-default bg-surface overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead>
-            <tr className="border-b border-slate-100">
-              <th className="bg-slate-50 px-3 py-2.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wider w-10 border-r border-slate-100">
+            <tr className="border-b border-border-muted">
+              <th className="bg-surface-elevated px-3 py-2.5 text-[10px] font-semibold text-text-muted uppercase tracking-wider w-10 border-r border-border-muted">
                 #
               </th>
               {headers.map((h) => (
                 <th
                   key={h}
-                  className="bg-slate-50 px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider min-w-[120px] border-r border-slate-50 last:border-r-0"
+                  className="bg-surface-elevated px-3 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider min-w-[120px] border-r border-border-muted last:border-r-0"
                 >
                   {h}
                 </th>
@@ -944,15 +944,15 @@ function RawPreview({
             {rows.slice(0, 4).map((row, i) => (
               <tr
                 key={i}
-                className="border-b border-slate-50 last:border-b-0"
+                className="border-b border-border-muted last:border-b-0"
               >
-                <td className="px-3 py-2 text-[11px] font-mono text-slate-300 border-r border-slate-100">
+                <td className="px-3 py-2 text-[11px] font-mono text-text-muted border-r border-border-muted">
                   {i + 1}
                 </td>
                 {headers.map((h) => (
                   <td
                     key={h}
-                    className="px-3 py-2 text-[12px] text-slate-500 max-w-[200px] truncate border-r border-slate-50 last:border-r-0"
+                    className="px-3 py-2 text-[12px] text-text-muted max-w-[200px] truncate border-r border-border-muted last:border-r-0"
                   >
                     {row[h] || "—"}
                   </td>
@@ -962,8 +962,8 @@ function RawPreview({
           </tbody>
         </table>
       </div>
-      <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-2">
-        <p className="text-[11px] text-slate-400">
+      <div className="border-t border-border-muted bg-surface-elevated/50 px-4 py-2">
+        <p className="text-[11px] text-text-muted">
           {totalRows} rows total — select a source type to map columns
         </p>
       </div>

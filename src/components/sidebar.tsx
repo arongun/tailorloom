@@ -10,7 +10,10 @@ import {
   AlertTriangle,
   LogOut,
   PanelLeftClose,
+  Sun,
+  Moon,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useSidebar } from "@/components/sidebar-provider";
@@ -36,6 +39,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { collapsed, toggle, setCollapsed } = useSidebar();
+  const { resolvedTheme, setTheme } = useTheme();
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -47,12 +51,16 @@ export function Sidebar() {
     if (collapsed) setCollapsed(false);
   };
 
+  const toggleTheme = () => {
+    setTheme(resolvedTheme === "dark" ? "light" : "dark");
+  };
+
   return (
     <TooltipProvider>
       <aside
         onClick={handleSidebarClick}
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-slate-200 bg-white transition-all duration-200 overflow-hidden",
+          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border-default bg-surface transition-all duration-200 overflow-hidden",
           collapsed ? "cursor-pointer" : ""
         )}
         style={{
@@ -67,7 +75,7 @@ export function Sidebar() {
               src="/tailorloom-logo.png"
               alt="TailorLoom"
               className={cn(
-                "h-[44px] w-auto transition-opacity duration-200",
+                "h-[44px] w-auto transition-opacity duration-200 dark:invert",
                 collapsed ? "opacity-0" : "opacity-100"
               )}
             />
@@ -76,7 +84,7 @@ export function Sidebar() {
               src="/tailorloom-icon.png"
               alt="TailorLoom"
               className={cn(
-                "absolute left-0 top-1/2 -translate-y-1/2 h-8 w-8 transition-opacity duration-200",
+                "absolute left-0 top-1/2 -translate-y-1/2 h-8 w-8 transition-opacity duration-200 dark:invert",
                 collapsed ? "opacity-100" : "opacity-0"
               )}
             />
@@ -87,7 +95,7 @@ export function Sidebar() {
               toggle();
             }}
             className={cn(
-              "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600",
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-muted transition-all hover:bg-surface-muted hover:text-text-secondary",
               collapsed
                 ? "opacity-0 pointer-events-none w-0 overflow-hidden"
                 : "opacity-100"
@@ -97,7 +105,7 @@ export function Sidebar() {
           </button>
         </div>
 
-        <div className="mx-4 h-px bg-slate-100" />
+        <div className="mx-4 h-px bg-border-muted" />
 
         {/* Navigation */}
         <nav className="flex flex-1 flex-col gap-1 px-3 pt-4">
@@ -107,7 +115,7 @@ export function Sidebar() {
               collapsed ? "opacity-0" : "opacity-100"
             )}
           >
-            <p className="text-[10px] font-semibold tracking-widest text-slate-400 uppercase whitespace-nowrap">
+            <p className="text-[10px] font-semibold tracking-widest text-text-muted uppercase whitespace-nowrap">
               Navigation
             </p>
           </div>
@@ -125,16 +133,16 @@ export function Sidebar() {
                 className={cn(
                   "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-150 overflow-hidden whitespace-nowrap",
                   isActive
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "bg-surface-active text-text-on-active shadow-sm"
+                    : "text-text-muted hover:bg-surface-elevated hover:text-text-primary"
                 )}
               >
                 <item.icon
                   className={cn(
                     "h-4 w-4 shrink-0 transition-colors",
                     isActive
-                      ? "text-white"
-                      : "text-slate-400 group-hover:text-slate-600"
+                      ? "text-text-on-active"
+                      : "text-text-muted group-hover:text-text-secondary"
                   )}
                   strokeWidth={isActive ? 2.5 : 2}
                 />
@@ -165,7 +173,39 @@ export function Sidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-slate-100 px-3 py-3">
+        <div className="border-t border-border-muted px-3 py-3">
+          {/* Theme toggle */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleTheme();
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-text-muted overflow-hidden whitespace-nowrap transition-colors hover:bg-surface-elevated hover:text-text-primary"
+              >
+                {resolvedTheme === "dark" ? (
+                  <Sun className="h-4 w-4 shrink-0 text-text-muted" />
+                ) : (
+                  <Moon className="h-4 w-4 shrink-0 text-text-muted" />
+                )}
+                <span
+                  className={cn(
+                    "transition-opacity duration-200",
+                    collapsed ? "opacity-0" : "opacity-100"
+                  )}
+                >
+                  {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+                </span>
+              </button>
+            </TooltipTrigger>
+            {collapsed && (
+              <TooltipContent side="right" sideOffset={8}>
+                {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+              </TooltipContent>
+            )}
+          </Tooltip>
+
           {/* Powered by */}
           <div
             className={cn(
@@ -173,7 +213,7 @@ export function Sidebar() {
               collapsed ? "h-0 opacity-0" : "h-6 opacity-100"
             )}
           >
-            <p className="px-3 pb-2 text-[10px] text-slate-300 tracking-wide whitespace-nowrap">
+            <p className="px-3 pb-2 text-[10px] text-text-muted/50 tracking-wide whitespace-nowrap">
               Powered by TailorLoom
             </p>
           </div>
@@ -186,9 +226,9 @@ export function Sidebar() {
                   e.stopPropagation();
                   handleSignOut();
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-slate-500 overflow-hidden whitespace-nowrap transition-colors hover:bg-slate-50 hover:text-slate-900"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-text-muted overflow-hidden whitespace-nowrap transition-colors hover:bg-surface-elevated hover:text-text-primary"
               >
-                <LogOut className="h-4 w-4 shrink-0 text-slate-400" />
+                <LogOut className="h-4 w-4 shrink-0 text-text-muted" />
                 <span
                   className={cn(
                     "transition-opacity duration-200",

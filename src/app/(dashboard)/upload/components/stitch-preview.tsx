@@ -59,7 +59,7 @@ export function StitchPreview({
           color={
             summary.uncertainMatches > 0
               ? "bg-amber-50/50 border-amber-200"
-              : "bg-white border-slate-200"
+              : "bg-surface border-border-default"
           }
           description="Name match, different email"
         />
@@ -73,8 +73,8 @@ export function StitchPreview({
         <SummaryCard
           label="Duplicates"
           value={summary.duplicateRows}
-          icon={<Copy className="h-4 w-4 text-slate-400" />}
-          color="bg-white border-slate-200"
+          icon={<Copy className="h-4 w-4 text-text-muted" />}
+          color="bg-surface border-border-default"
           description="Already imported, skipped"
         />
       </div>
@@ -122,16 +122,16 @@ export function StitchPreview({
               key={row.rowIndex}
               className="flex items-center gap-4 px-5 py-2.5 text-[12px]"
             >
-              <span className="font-mono text-slate-400 w-12">
+              <span className="font-mono text-text-muted w-12">
                 Row {row.rowIndex}
               </span>
-              <span className="text-slate-700 min-w-[140px] truncate">
+              <span className="text-text-secondary min-w-[140px] truncate">
                 {row.name ?? "—"}
               </span>
-              <span className="text-slate-500 min-w-[180px] truncate">
+              <span className="text-text-muted min-w-[180px] truncate">
                 {row.email ?? "—"}
               </span>
-              <span className="text-slate-300 mx-1">&rarr;</span>
+              <span className="text-text-muted mx-1">&rarr;</span>
               <span className="text-emerald-600 truncate">
                 {row.existingCustomerName ?? row.existingCustomerEmail ?? "—"}
               </span>
@@ -154,13 +154,13 @@ export function StitchPreview({
               key={row.rowIndex}
               className="flex items-center gap-4 px-5 py-2.5 text-[12px]"
             >
-              <span className="font-mono text-slate-400 w-12">
+              <span className="font-mono text-text-muted w-12">
                 Row {row.rowIndex}
               </span>
-              <span className="text-slate-700 min-w-[140px] truncate">
+              <span className="text-text-secondary min-w-[140px] truncate">
                 {row.name ?? "—"}
               </span>
-              <span className="text-slate-500 truncate">
+              <span className="text-text-muted truncate">
                 {row.email ?? "—"}
               </span>
             </div>
@@ -181,16 +181,16 @@ export function StitchPreview({
               key={row.rowIndex}
               className="flex items-center gap-4 px-5 py-2.5 text-[12px]"
             >
-              <span className="font-mono text-slate-400 w-12">
+              <span className="font-mono text-text-muted w-12">
                 Row {row.rowIndex}
               </span>
-              <span className="text-slate-700 min-w-[140px] truncate">
+              <span className="text-text-secondary min-w-[140px] truncate">
                 {row.name ?? "—"}
               </span>
-              <span className="text-slate-500 truncate">
+              <span className="text-text-muted truncate">
                 {row.externalId}
               </span>
-              <span className="text-slate-400 text-[11px]">
+              <span className="text-text-muted text-[11px]">
                 already imported
               </span>
             </div>
@@ -219,11 +219,11 @@ function SummaryCard({
   return (
     <div className={`rounded-lg border p-4 ${color}`}>
       <div className="flex items-center gap-2 mb-2">{icon}</div>
-      <p className="text-[18px] font-semibold text-slate-900 tabular-nums">
+      <p className="text-[18px] font-semibold text-text-primary tabular-nums">
         {value}
       </p>
-      <p className="text-[11px] text-slate-500 mt-0.5">{label}</p>
-      <p className="text-[10px] text-slate-400 mt-0.5">{description}</p>
+      <p className="text-[11px] text-text-muted mt-0.5">{label}</p>
+      <p className="text-[10px] text-text-muted mt-0.5">{description}</p>
     </div>
   );
 }
@@ -246,26 +246,26 @@ function UncertainMatchRow({
             Row {row.rowIndex}
           </span>
         </div>
-        <p className="text-[13px] font-medium text-slate-800 truncate">
+        <p className="text-[13px] font-medium text-text-primary truncate">
           {row.name ?? "—"}
         </p>
-        <p className="text-[12px] text-slate-500 truncate">
+        <p className="text-[12px] text-text-muted truncate">
           {row.email ?? "No email"}
         </p>
       </div>
 
       {/* Arrow */}
-      <div className="flex items-center pt-4 text-slate-300">
+      <div className="flex items-center pt-4 text-text-muted">
         <span className="text-[12px]">&harr;</span>
       </div>
 
       {/* Existing customer */}
       <div className="flex-1 min-w-0">
-        <p className="text-[11px] text-slate-400 mb-1">Existing customer</p>
-        <p className="text-[13px] font-medium text-slate-800 truncate">
+        <p className="text-[11px] text-text-muted mb-1">Existing customer</p>
+        <p className="text-[13px] font-medium text-text-primary truncate">
           {row.existingCustomerName ?? "—"}
         </p>
-        <p className="text-[12px] text-slate-500 truncate">
+        <p className="text-[12px] text-text-muted truncate">
           {row.existingCustomerEmail ?? "No email"}
         </p>
       </div>
@@ -299,7 +299,7 @@ function UncertainMatchRow({
           onClick={() => onDecisionChange({ action: "skip" })}
           icon={<SkipForward className="h-3.5 w-3.5" />}
           label="Skip"
-          activeColor="bg-slate-200 text-slate-700 border-slate-300"
+          activeColor="bg-surface-muted text-text-secondary border-border-default"
         />
       </div>
     </div>
@@ -327,7 +327,7 @@ function DecisionButton({
         "flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition-all",
         active
           ? activeColor
-          : "bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700"
+          : "bg-surface border-border-default text-text-muted hover:border-border-default hover:text-text-secondary"
       )}
     >
       {icon}
@@ -341,8 +341,8 @@ function MatchBadge({ category }: { category: string }) {
     external_id: { label: "ID", color: "bg-emerald-100 text-emerald-700" },
     email: { label: "Email", color: "bg-blue-100 text-blue-700" },
     name_conflict: { label: "Name", color: "bg-amber-100 text-amber-700" },
-    new: { label: "New", color: "bg-slate-100 text-slate-600" },
-    duplicate: { label: "Dup", color: "bg-slate-100 text-slate-500" },
+    new: { label: "New", color: "bg-surface-muted text-text-secondary" },
+    duplicate: { label: "Dup", color: "bg-surface-muted text-text-muted" },
   };
 
   const c = config[category] ?? config.new;
@@ -379,14 +379,14 @@ function CollapsibleSection({
       ? "border-emerald-200"
       : color === "blue"
         ? "border-blue-200"
-        : "border-slate-200";
+        : "border-border-default";
 
   const headerBg =
     color === "emerald"
       ? "bg-emerald-50/30"
       : color === "blue"
         ? "bg-blue-50/30"
-        : "bg-slate-50/30";
+        : "bg-surface-elevated/30";
 
   return (
     <div className={cn("rounded-xl border overflow-hidden", borderColor)}>
@@ -394,33 +394,33 @@ function CollapsibleSection({
         type="button"
         onClick={() => setOpen(!open)}
         className={cn(
-          "w-full flex items-center justify-between px-5 py-3 text-left transition-colors hover:bg-slate-50/50",
+          "w-full flex items-center justify-between px-5 py-3 text-left transition-colors hover:bg-surface-elevated/50",
           headerBg
         )}
       >
-        <p className="text-[13px] font-medium text-slate-700">
+        <p className="text-[13px] font-medium text-text-secondary">
           {title}{" "}
-          <span className="text-slate-400 font-normal">({count})</span>
+          <span className="text-text-muted font-normal">({count})</span>
         </p>
         <div className="flex items-center gap-2">
           {!open && count > sampleCount && (
-            <span className="text-[11px] text-slate-400">
+            <span className="text-[11px] text-text-muted">
               showing {sampleCount} of {count}
             </span>
           )}
           {open ? (
-            <ChevronDown className="h-4 w-4 text-slate-400" />
+            <ChevronDown className="h-4 w-4 text-text-muted" />
           ) : (
-            <ChevronRight className="h-4 w-4 text-slate-400" />
+            <ChevronRight className="h-4 w-4 text-text-muted" />
           )}
         </div>
       </button>
       {open && (
-        <div className="divide-y divide-slate-100 border-t border-slate-100">
+        <div className="divide-y divide-border-muted border-t border-border-muted">
           {children}
           {count > sampleCount && (
             <div className="px-5 py-2 text-center">
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-text-muted">
                 Showing {sampleCount} of {count} rows
               </p>
             </div>
