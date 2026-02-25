@@ -56,6 +56,7 @@ export default function UploadPage() {
     totalRows: number;
   } | null>(null);
 
+  const [isMapperReady, setIsMapperReady] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
 
   // Step 2 — stitch preview
@@ -80,12 +81,14 @@ export default function UploadPage() {
       totalRows: number;
     }) => {
       mapperData.current = data;
+      setIsMapperReady(true);
     },
     []
   );
 
   const handleMapperClear = useCallback(() => {
     mapperData.current = null;
+    setIsMapperReady(false);
   }, []);
 
   const handleSaveTemplate = useCallback(
@@ -206,17 +209,15 @@ export default function UploadPage() {
   const handleStartOver = () => {
     setStep(1);
     mapperData.current = null;
+    setIsMapperReady(false);
     setStitchPreviewResult(null);
     setStitchDecisions({});
     setImportResult(null);
   };
 
-  const canContinue = () => {
-    return (
-      !!mapperData.current &&
-      Object.keys(mapperData.current.mapping).length > 0
-    );
-  };
+  const canContinue = isMapperReady &&
+    !!mapperData.current &&
+    Object.keys(mapperData.current.mapping).length > 0;
 
   // ─── Render ────────────────────────────────────────────
 
@@ -344,7 +345,7 @@ export default function UploadPage() {
           {step === 1 && (
             <Button
               onClick={handleContinueToVerify}
-              disabled={!canContinue() || isVerifying}
+              disabled={!canContinue || isVerifying}
               className="text-[13px]"
             >
               {isVerifying ? (
