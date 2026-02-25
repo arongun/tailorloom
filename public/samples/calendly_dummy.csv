@@ -1,0 +1,5 @@
+calendly_invitee_id,calendly_event_id,email,full_name,phone,service_name,booking_date,status
+cal_001,evt_2001,kate@email.com,Kate Siakpere,+1 (123) 456-7890,Monthly Membership,2026-02-11,completed
+cal_002,evt_2002,john@email.com,John Smith,+1 (555) 111-2222,Drop-In Class,2026-01-04,completed
+cal_003,evt_2003,maria@email.com,Maria Lopez,,Private Session,2026-02-16,completed
+cal_004,evt_2004,john@email.com,Jonathan Smith,+1 (555) 111-2222,Workshop,2026-02-21,completed

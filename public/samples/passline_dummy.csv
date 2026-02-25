@@ -1,0 +1,5 @@
+passline_id,event_name,email,full_name,phone,check_in_date,ticket_type
+pass_001,Spring Retreat,kate@email.com,Kate Siakpere,+1 (123) 456-7890,2026-02-08,VIP
+pass_002,Community Event,john@email.com,John Smith,+1 (555) 111-2222,2025-12-25,General
+pass_003,Private Retreat,maria@email.com,Maria Lopez,,2026-02-15,Premium
+pass_004,Workshop,noemail@email.com,No Email User,,2026-01-29,Standard

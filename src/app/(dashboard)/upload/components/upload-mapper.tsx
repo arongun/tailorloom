@@ -560,10 +560,10 @@ export function UploadMapper({
           </p>
         )}
         {/* Sample CSVs */}
-        <div className="mt-4 flex items-center justify-center gap-4">
+        <div className="mt-4 flex items-center justify-center gap-4 flex-wrap">
           <span className="text-[11px] text-slate-400">Try a sample:</span>
           <a
-            href="/samples/stripe_export.csv"
+            href="/samples/stripe_dummy.csv"
             download
             className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
           >
@@ -571,7 +571,7 @@ export function UploadMapper({
             Stripe
           </a>
           <a
-            href="/samples/calendly_export.csv"
+            href="/samples/calendly_dummy.csv"
             download
             className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
           >
@@ -579,12 +579,28 @@ export function UploadMapper({
             Calendly
           </a>
           <a
-            href="/samples/passline_export.csv"
+            href="/samples/passline_dummy.csv"
             download
             className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
           >
             <Download className="h-3 w-3" />
             PassLine
+          </a>
+          <a
+            href="/samples/costco_pos_dummy.csv"
+            download
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            POS
+          </a>
+          <a
+            href="/samples/wetravel_dummy.csv"
+            download
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            WeTravel
           </a>
         </div>
       </div>
