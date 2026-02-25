@@ -10,7 +10,7 @@ export function DashboardMain({ children }: { children: React.ReactNode }) {
     <main
       className={cn(
         "min-h-screen transition-all duration-200",
-        collapsed ? "ml-[68px]" : "ml-[260px]"
+        collapsed ? "ml-[60px]" : "ml-[260px]"
       )}
     >
       {children}

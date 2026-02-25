@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   LogOut,
   PanelLeftClose,
-  PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -22,6 +21,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+
+const EXPANDED_W = 260;
+const COLLAPSED_W = 60;
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -34,7 +36,7 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { collapsed, toggle } = useSidebar();
+  const { collapsed, toggle, setCollapsed } = useSidebar();
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -42,160 +44,151 @@ export function Sidebar() {
     router.push("/login");
   };
 
+  const handleSidebarClick = () => {
+    if (collapsed) setCollapsed(false);
+  };
+
   return (
     <TooltipProvider>
       <aside
+        onClick={handleSidebarClick}
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-slate-200 bg-white transition-all duration-200",
-          collapsed ? "w-[68px]" : "w-[260px]"
+          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-slate-200 bg-white transition-all duration-200 overflow-hidden",
+          collapsed ? "cursor-pointer" : ""
         )}
+        style={{ width: collapsed ? COLLAPSED_W : EXPANDED_W }}
       >
-        {/* Brand */}
-        <div
-          className={cn(
-            "flex items-center py-6 transition-all duration-200",
-            collapsed ? "justify-center px-3" : "px-6"
-          )}
-        >
-          {collapsed ? (
+        {/* Inner wrapper — always full expanded width so icons never shift */}
+        <div className="flex h-full flex-col" style={{ width: EXPANDED_W }}>
+          {/* Brand */}
+          <div className="flex items-center justify-between px-5 py-5">
             <Image
-              src="/tailorloom-icon.png"
+              src="/tailorloom-logo.png"
               alt="TailorLoom"
-              width={28}
+              width={130}
               height={28}
               className="shrink-0"
+              priority
             />
-          ) : (
-            <div>
-              <Image
-                src="/tailorloom-logo.png"
-                alt="TailorLoom"
-                width={150}
-                height={32}
-                className="shrink-0"
-              />
-              <p className="mt-1 text-[11px] font-medium tracking-wide text-slate-400 uppercase">
-                Revenue Console
-              </p>
-            </div>
-          )}
-        </div>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle();
+              }}
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-md text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600",
+                collapsed ? "opacity-0 pointer-events-none" : "opacity-100"
+              )}
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </button>
+          </div>
 
-        <div className="mx-4 h-px bg-slate-100" />
+          <div className="mx-4 h-px bg-slate-100" />
 
-        {/* Navigation */}
-        <nav className="flex flex-1 flex-col gap-1 px-3 pt-4">
-          {!collapsed && (
-            <p className="mb-2 px-3 text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
+          {/* Navigation */}
+          <nav className="flex flex-1 flex-col gap-1 px-3 pt-4">
+            <p
+              className={cn(
+                "mb-2 px-3 text-[10px] font-semibold tracking-widest text-slate-400 uppercase transition-opacity duration-200",
+                collapsed ? "opacity-0" : "opacity-100"
+              )}
+            >
               Navigation
             </p>
-          )}
-          {navItems.map((item) => {
-            const isActive =
-              item.href === "/"
-                ? pathname === "/"
-                : pathname.startsWith(item.href);
+            {navItems.map((item) => {
+              const isActive =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href);
 
-            const link = (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "group flex items-center rounded-lg text-[13px] font-medium transition-all duration-150",
-                  collapsed
-                    ? "justify-center px-0 py-2.5"
-                    : "gap-3 px-3 py-2.5",
-                  isActive
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                )}
-              >
-                <item.icon
+              const link = (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={(e) => e.stopPropagation()}
                   className={cn(
-                    "h-4 w-4 shrink-0 transition-colors",
+                    "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-all duration-150 whitespace-nowrap",
                     isActive
-                      ? "text-white"
-                      : "text-slate-400 group-hover:text-slate-600"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                   )}
-                  strokeWidth={isActive ? 2.5 : 2}
-                />
-                {!collapsed && item.label}
-              </Link>
-            );
-
-            if (collapsed) {
-              return (
-                <Tooltip key={item.href}>
-                  <TooltipTrigger asChild>{link}</TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8}>
+                >
+                  <item.icon
+                    className={cn(
+                      "h-4 w-4 shrink-0 transition-colors",
+                      isActive
+                        ? "text-white"
+                        : "text-slate-400 group-hover:text-slate-600"
+                    )}
+                    strokeWidth={isActive ? 2.5 : 2}
+                  />
+                  <span
+                    className={cn(
+                      "transition-opacity duration-200",
+                      collapsed ? "opacity-0" : "opacity-100"
+                    )}
+                  >
                     {item.label}
-                  </TooltipContent>
-                </Tooltip>
+                  </span>
+                </Link>
               );
-            }
 
-            return link;
-          })}
-        </nav>
+              if (collapsed) {
+                return (
+                  <Tooltip key={item.href}>
+                    <TooltipTrigger asChild>{link}</TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={12}>
+                      {item.label}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              }
 
-        {/* Footer */}
-        <div className="border-t border-slate-100 p-3">
-          {/* Collapse toggle */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={toggle}
-                className={cn(
-                  "flex w-full items-center rounded-lg py-2 text-[13px] font-medium text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-600",
-                  collapsed ? "justify-center px-0" : "gap-3 px-3"
-                )}
-              >
-                {collapsed ? (
-                  <PanelLeftOpen className="h-4 w-4" />
-                ) : (
-                  <>
-                    <PanelLeftClose className="h-4 w-4" />
-                    <span>Collapse</span>
-                  </>
-                )}
-              </button>
-            </TooltipTrigger>
-            {collapsed && (
-              <TooltipContent side="right" sideOffset={8}>
-                Expand sidebar
-              </TooltipContent>
-            )}
-          </Tooltip>
+              return link;
+            })}
+          </nav>
 
-          {/* Sign out */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={handleSignOut}
-                className={cn(
-                  "flex w-full items-center rounded-lg py-2.5 text-[13px] font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900",
-                  collapsed ? "justify-center px-0" : "gap-3 px-3"
-                )}
-              >
-                <LogOut className="h-4 w-4 shrink-0 text-slate-400" />
-                {!collapsed && "Sign out"}
-              </button>
-            </TooltipTrigger>
-            {collapsed && (
-              <TooltipContent side="right" sideOffset={8}>
-                Sign out
-              </TooltipContent>
-            )}
-          </Tooltip>
+          {/* Footer */}
+          <div className="border-t border-slate-100 px-3 py-3">
+            {/* Powered by */}
+            <p
+              className={cn(
+                "px-3 pb-2 text-[10px] text-slate-300 tracking-wide whitespace-nowrap transition-opacity duration-200",
+                collapsed ? "opacity-0" : "opacity-100"
+              )}
+            >
+              Powered by TailorLoom
+            </p>
 
-          {/* Powered by */}
-          {!collapsed && (
-            <div className="mt-2 px-3">
-              <p className="text-[10px] text-slate-300 tracking-wide">
-                Powered by TailorLoom
-              </p>
-            </div>
-          )}
+            {/* Sign out */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSignOut();
+                  }}
+                  className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-slate-500 whitespace-nowrap transition-colors hover:bg-slate-50 hover:text-slate-900"
+                >
+                  <LogOut className="h-4 w-4 shrink-0 text-slate-400" />
+                  <span
+                    className={cn(
+                      "transition-opacity duration-200",
+                      collapsed ? "opacity-0" : "opacity-100"
+                    )}
+                  >
+                    Sign out
+                  </span>
+                </button>
+              </TooltipTrigger>
+              {collapsed && (
+                <TooltipContent side="right" sideOffset={12}>
+                  Sign out
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </div>
         </div>
       </aside>
     </TooltipProvider>
