@@ -39,13 +39,13 @@ const TRANSACTION_ICONS: Record<string, typeof CreditCard> = {
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-4">
-      <span className="text-[11px] text-text-muted uppercase tracking-wide shrink-0">
+    <div className="min-w-0">
+      <p className="text-[11px] text-text-muted uppercase tracking-wide mb-0.5">
         {label}
-      </span>
-      <span className="text-[12px] text-text-primary text-right break-all">
+      </p>
+      <p className="text-[12px] text-text-primary break-words">
         {value}
-      </span>
+      </p>
     </div>
   );
 }
@@ -78,7 +78,7 @@ function TransactionDetailPanel({
 
   return (
     <div className="border-t border-border-muted bg-surface-muted/50 px-3 py-3 space-y-3">
-      <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         {/* Payment fields */}
         {tx.type === "payment" && (
           <>
@@ -109,7 +109,9 @@ function TransactionDetailPanel({
               <DetailRow label="Booking ID" value={tx.external_booking_id} />
             )}
             {tx.event_type && (
-              <DetailRow label="Event" value={tx.event_type} />
+              <div className="col-span-2">
+                <DetailRow label="Event" value={tx.event_type} />
+              </div>
             )}
             {tx.status && (
               <DetailRow label="Status" value={tx.status} />
@@ -154,7 +156,7 @@ function TransactionDetailPanel({
           <p className="text-[11px] text-text-muted uppercase tracking-wide font-medium mb-2">
             Attribution
           </p>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
             {tx.utm_source && <DetailRow label="UTM Source" value={tx.utm_source} />}
             {tx.utm_medium && <DetailRow label="UTM Medium" value={tx.utm_medium} />}
             {tx.utm_campaign && <DetailRow label="UTM Campaign" value={tx.utm_campaign} />}
