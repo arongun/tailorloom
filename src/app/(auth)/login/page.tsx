@@ -2,7 +2,8 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -160,13 +161,15 @@ export default function LoginPage() {
         <CardContent className="p-8">
           {/* Brand */}
           <div className="flex flex-col items-center mb-8">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-900 mb-4">
-              <Activity className="h-6 w-6 text-white" strokeWidth={2.5} />
-            </div>
-            <h1 className="text-lg font-semibold tracking-[-0.02em] text-slate-900">
-              TailorLoom
-            </h1>
-            <p className="text-[13px] text-slate-500 mt-1">
+            <Image
+              src="/tailorloom-logo.png"
+              alt="TailorLoom"
+              width={180}
+              height={40}
+              className="mb-3"
+              priority
+            />
+            <p className="text-[13px] text-slate-500">
               Revenue Intelligence Console
             </p>
           </div>
@@ -317,6 +320,9 @@ export default function LoginPage() {
               </div>
             </div>
           )}
+          <p className="text-center text-[10px] text-slate-300 mt-8 tracking-wide">
+            Powered by TailorLoom
+          </p>
         </CardContent>
       </Card>
     </div>

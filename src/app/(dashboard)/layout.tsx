@@ -1,5 +1,7 @@
 import { Toaster } from "@/components/ui/sonner";
 import { Sidebar } from "@/components/sidebar";
+import { SidebarProvider } from "@/components/sidebar-provider";
+import { DashboardMain } from "@/components/dashboard-main";
 
 export const metadata = {
   title: "TailorLoom — Revenue Intelligence Console",
@@ -13,10 +15,10 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <>
+    <SidebarProvider>
       <Sidebar />
-      <main className="ml-[260px] min-h-screen">{children}</main>
+      <DashboardMain>{children}</DashboardMain>
       <Toaster position="bottom-right" richColors />
-    </>
+    </SidebarProvider>
   );
 }
