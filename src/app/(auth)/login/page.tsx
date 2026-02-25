@@ -8,12 +8,14 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { createClient } from "@/lib/supabase/client";
+import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 type Step = "email" | "otp";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
@@ -161,7 +163,7 @@ export default function LoginPage() {
           {/* Brand */}
           <div className="flex flex-col items-center mb-8">
             <img
-              src="/tailorloom-logo.png"
+              src={resolvedTheme === "dark" ? "/tailorloom-logo-dark.png" : "/tailorloom-logo.png"}
               alt="TailorLoom"
               className="mb-3 h-10 w-auto"
             />

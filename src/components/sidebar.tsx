@@ -72,10 +72,10 @@ export function Sidebar() {
           <div className="relative flex-1 min-w-0">
             {/* Full logo — visible when expanded */}
             <img
-              src="/tailorloom-logo.png"
+              src={resolvedTheme === "dark" ? "/tailorloom-logo-dark.png" : "/tailorloom-logo.png"}
               alt="TailorLoom"
               className={cn(
-                "h-[44px] w-auto transition-opacity duration-200 dark:invert",
+                "h-[44px] w-auto transition-opacity duration-200",
                 collapsed ? "opacity-0" : "opacity-100"
               )}
             />
@@ -84,7 +84,7 @@ export function Sidebar() {
               src="/tailorloom-icon.png"
               alt="TailorLoom"
               className={cn(
-                "absolute left-0 top-1/2 -translate-y-1/2 h-8 w-8 transition-opacity duration-200 dark:invert",
+                "absolute left-0 top-1/2 -translate-y-1/2 h-8 w-8 transition-opacity duration-200",
                 collapsed ? "opacity-100" : "opacity-0"
               )}
             />
