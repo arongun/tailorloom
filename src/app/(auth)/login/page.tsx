@@ -3,7 +3,6 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -161,14 +160,10 @@ export default function LoginPage() {
         <CardContent className="p-8">
           {/* Brand */}
           <div className="flex flex-col items-center mb-8">
-            <Image
+            <img
               src="/tailorloom-logo.png"
               alt="TailorLoom"
-              width={300}
-              height={100}
               className="mb-3 h-10 w-auto"
-              priority
-              unoptimized
             />
             <p className="text-[13px] text-slate-500">
               Revenue Intelligence Console

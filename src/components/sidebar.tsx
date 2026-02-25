@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
@@ -61,16 +60,25 @@ export function Sidebar() {
         }}
       >
         {/* Brand */}
-        <div className="flex items-center justify-between px-4 py-5 min-h-[68px]">
-          <div className="overflow-hidden shrink-0">
-            <Image
+        <div className="flex items-center px-4 py-5 min-h-[68px]">
+          <div className="relative flex-1 min-w-0">
+            {/* Full logo — visible when expanded */}
+            <img
               src="/tailorloom-logo.png"
               alt="TailorLoom"
-              width={300}
-              height={100}
-              className="shrink-0 h-7 w-auto"
-              priority
-              unoptimized
+              className={cn(
+                "h-8 w-auto transition-opacity duration-200",
+                collapsed ? "opacity-0" : "opacity-100"
+              )}
+            />
+            {/* Icon only — visible when collapsed */}
+            <img
+              src="/tailorloom-icon.png"
+              alt="TailorLoom"
+              className={cn(
+                "absolute left-0 top-1/2 -translate-y-1/2 h-8 w-8 transition-opacity duration-200",
+                collapsed ? "opacity-100" : "opacity-0"
+              )}
             />
           </div>
           <button
