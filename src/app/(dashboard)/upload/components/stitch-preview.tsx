@@ -384,16 +384,16 @@ function CollapsibleSection({
 
   const borderColor =
     color === "emerald"
-      ? "border-emerald-200"
+      ? "border-emerald-200 dark:border-emerald-800"
       : color === "blue"
-        ? "border-blue-200"
+        ? "border-blue-200 dark:border-blue-800"
         : "border-border-default";
 
   const headerBg =
     color === "emerald"
-      ? "bg-emerald-50/30"
+      ? "bg-emerald-50/30 dark:bg-emerald-950/40"
       : color === "blue"
-        ? "bg-blue-50/30"
+        ? "bg-blue-50/30 dark:bg-blue-950/40"
         : "bg-surface-elevated/30";
 
   return (
