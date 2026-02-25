@@ -159,6 +159,7 @@ export async function previewStitching(options: {
   const parsed = parseCSVContent(options.content);
 
   const uncertainRows: StitchPreviewRow[] = [];
+  const nameReviewRows: StitchPreviewRow[] = [];
   const confidentRows: StitchPreviewRow[] = [];
   const newRows: StitchPreviewRow[] = [];
   const duplicateRows: StitchPreviewRow[] = [];
@@ -166,6 +167,7 @@ export async function previewStitching(options: {
 
   let confidentCount = 0;
   let uncertainCount = 0;
+  let nameReviewCount = 0;
   let newCount = 0;
   let duplicateCount = 0;
   let enrichmentCount = 0;
@@ -187,9 +189,9 @@ export async function previewStitching(options: {
     const name = schema.nameField ? (mapped[schema.nameField] ?? null) : null;
     const phone = schema.phoneField ? (mapped[schema.phoneField] ?? null) : null;
 
-    // For POS, use membership_id as the stitch external ID
+    // Use customerIdField (e.g. membership_id for POS, stripe customer ID) as stitch key
     const stitchExternalId =
-      options.source === "pos" && schema.customerIdField
+      schema.customerIdField
         ? (mapped[schema.customerIdField] ?? externalId)
         : externalId;
 
@@ -234,6 +236,7 @@ export async function previewStitching(options: {
       confidence: preview.confidence,
       candidates: preview.candidates,
       enrichableFields: preview.enrichableFields,
+      rawRow,
     };
 
     switch (preview.category) {
@@ -241,6 +244,10 @@ export async function previewStitching(options: {
       case "email":
         confidentCount++;
         if (confidentRows.length < 50) confidentRows.push(row);
+        break;
+      case "email_name_mismatch":
+        nameReviewCount++;
+        nameReviewRows.push(row);
         break;
       case "enrichment":
         enrichmentCount++;
@@ -263,12 +270,14 @@ export async function previewStitching(options: {
     summary: {
       confidentMatches: confidentCount,
       uncertainMatches: uncertainCount,
+      nameReviewMatches: nameReviewCount,
       newCustomers: newCount,
       duplicateRows: duplicateCount,
       enrichments: enrichmentCount,
       totalValidRows: totalValid,
     },
     uncertainRows,
+    nameReviewRows,
     confidentRows,
     newRows,
     duplicateRows,
@@ -371,9 +380,9 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
       const name = schema.nameField ? (mapped[schema.nameField] ?? null) : null;
       const phone = schema.phoneField ? (mapped[schema.phoneField] ?? null) : null;
 
-      // For POS, use membership_id as the stitch external ID
+      // Use customerIdField (e.g. membership_id for POS, stripe customer ID) as stitch key
       const stitchExternalId =
-        options.source === "pos" && schema.customerIdField
+        schema.customerIdField
           ? (mapped[schema.customerIdField] ?? externalId)
           : externalId;
 
@@ -388,10 +397,16 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
       // Determine forceCustomerId and enrichFields from user decisions
       let forceId: string | undefined;
       let enrichFields: { full_name?: string; email?: string; phone?: string } | undefined;
+      let forceNameUpdate: string | undefined;
 
       if (decision) {
         if (decision.action === "merge") {
           forceId = decision.targetCustomerId;
+        } else if (decision.action === "merge_keep_name") {
+          forceId = decision.targetCustomerId;
+        } else if (decision.action === "merge_update_name") {
+          forceId = decision.targetCustomerId;
+          if (name) forceNameUpdate = name;
         } else if (decision.action === "accept_enrichment") {
           forceId = decision.targetCustomerId;
           // Build enrichment fields from the CSV row data
@@ -412,7 +427,8 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
         name,
         phone,
         forceId,
-        enrichFields
+        enrichFields,
+        forceNameUpdate
       );
 
       // Track match type

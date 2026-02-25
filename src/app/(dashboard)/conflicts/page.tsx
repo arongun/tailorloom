@@ -145,7 +145,7 @@ export default function ConflictsPage() {
           </CardContent>
         ) : conflicts.length === 0 ? (
           <CardContent className="flex flex-col items-center justify-center py-16 px-8">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-amber-50 mb-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-amber-50 dark:bg-amber-500/10 mb-4">
               <AlertTriangle className="h-6 w-6 text-amber-500" />
             </div>
             <p className="text-[14px] font-medium text-text-secondary mb-1">
@@ -226,7 +226,7 @@ export default function ConflictsPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 text-[11px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+                              className="h-7 text-[11px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-500/10"
                               disabled={isResolvingThis}
                               onClick={() =>
                                 handleResolve(conflict.id, "merged")
@@ -314,10 +314,10 @@ function ConfidencePill({ value }: { value: number | null }) {
   const pct = Math.round(value * 100);
   const color =
     pct >= 80
-      ? "text-emerald-700 bg-emerald-50"
+      ? "text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10"
       : pct >= 50
-        ? "text-amber-700 bg-amber-50"
-        : "text-rose-700 bg-rose-50";
+        ? "text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-500/10"
+        : "text-rose-700 bg-rose-50 dark:text-rose-400 dark:bg-rose-500/10";
 
   return (
     <span

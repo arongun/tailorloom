@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   Upload,
   RotateCcw,
@@ -34,6 +34,13 @@ import type {
   StitchPreviewResult,
   StitchDecisions,
 } from "@/lib/types";
+
+import {
+  saveUploadSession,
+  loadUploadSession,
+  clearUploadSession,
+} from "@/lib/upload-session";
+import type { MapperRestoredData } from "@/lib/upload-session";
 
 type Step = 1 | 2 | 3;
 
@@ -69,6 +76,35 @@ export default function UploadPage() {
     useState<ImportResultDetailed | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
+  // Session persistence
+  const [restoredMapperData, setRestoredMapperData] =
+    useState<MapperRestoredData | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
+
+  // Restore session on mount
+  useEffect(() => {
+    const session = loadUploadSession();
+    if (session?.mapper) {
+      mapperData.current = {
+        source: session.mapper.source,
+        file: new File([], session.mapper.fileName),
+        content: session.mapper.content,
+        mapping: session.mapper.mapping,
+        headers: session.mapper.headers,
+        totalRows: session.mapper.totalRows,
+      };
+      setIsMapperReady(true);
+      setRestoredMapperData(session.mapper);
+
+      if (session.step === 2 && session.stitch) {
+        setStitchPreviewResult(session.stitch.preview);
+        setStitchDecisions(session.stitch.decisions);
+        setStep(2);
+      }
+    }
+    setSessionLoaded(true);
+  }, []);
+
   // ─── Handlers ──────────────────────────────────────────
 
   const handleMapperReady = useCallback(
@@ -82,6 +118,22 @@ export default function UploadPage() {
     }) => {
       mapperData.current = data;
       setIsMapperReady(true);
+
+      saveUploadSession({
+        version: 1,
+        savedAt: Date.now(),
+        step: 1,
+        mapper: {
+          fileName: data.file.name,
+          fileSize: data.file.size,
+          content: data.content,
+          source: data.source,
+          mapping: data.mapping,
+          headers: data.headers,
+          totalRows: data.totalRows,
+        },
+        stitch: null,
+      });
     },
     []
   );
@@ -89,6 +141,8 @@ export default function UploadPage() {
   const handleMapperClear = useCallback(() => {
     mapperData.current = null;
     setIsMapperReady(false);
+    clearUploadSession();
+    setRestoredMapperData(null);
   }, []);
 
   const handleSaveTemplate = useCallback(
@@ -109,6 +163,27 @@ export default function UploadPage() {
     },
     []
   );
+
+  // Persist decision changes while on step 2
+  useEffect(() => {
+    if (step !== 2 || !stitchPreview || !mapperData.current) return;
+    const data = mapperData.current;
+    saveUploadSession({
+      version: 1,
+      savedAt: Date.now(),
+      step: 2,
+      mapper: {
+        fileName: data.file.name,
+        fileSize: data.file.size,
+        content: data.content,
+        source: data.source,
+        mapping: data.mapping,
+        headers: data.headers,
+        totalRows: data.totalRows,
+      },
+      stitch: { preview: stitchPreview, decisions: stitchDecisions },
+    });
+  }, [stitchDecisions, step, stitchPreview]);
 
   /** Step 1 → Step 2: validate CSV then run stitch preview */
   const handleContinueToVerify = async () => {
@@ -145,6 +220,22 @@ export default function UploadPage() {
       setStitchPreviewResult(stitchResult);
       setStitchDecisions(defaults);
       setStep(2);
+
+      saveUploadSession({
+        version: 1,
+        savedAt: Date.now(),
+        step: 2,
+        mapper: {
+          fileName: data.file.name,
+          fileSize: data.file.size,
+          content: data.content,
+          source: data.source,
+          mapping: data.mapping,
+          headers: data.headers,
+          totalRows: data.totalRows,
+        },
+        stitch: { preview: stitchResult, decisions: defaults },
+      });
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to verify data"
@@ -205,6 +296,7 @@ export default function UploadPage() {
       });
     } finally {
       setIsImporting(false);
+      clearUploadSession();
     }
   };
 
@@ -215,6 +307,8 @@ export default function UploadPage() {
     setStitchPreviewResult(null);
     setStitchDecisions({});
     setImportResult(null);
+    clearUploadSession();
+    setRestoredMapperData(null);
   };
 
   const canContinue = isMapperReady &&
@@ -222,6 +316,8 @@ export default function UploadPage() {
     Object.keys(mapperData.current.mapping).length > 0;
 
   // ─── Render ────────────────────────────────────────────
+
+  if (!sessionLoaded) return null;
 
   return (
     <div className="p-8 max-w-[960px]">
@@ -293,6 +389,7 @@ export default function UploadPage() {
               onReady={handleMapperReady}
               onClear={handleMapperClear}
               onSaveTemplate={handleSaveTemplate}
+              initialData={restoredMapperData}
             />
           </div>
         )}
@@ -305,8 +402,8 @@ export default function UploadPage() {
             stitchPreview.summary.duplicateRows > 0 ? (
               <>
                 <div className="flex flex-col items-center text-center py-8">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
-                    <Copy className="h-7 w-7 text-amber-600" />
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-500/10">
+                    <Copy className="h-7 w-7 text-amber-600 dark:text-amber-400" />
                   </div>
                   <p className="mt-4 text-[16px] font-semibold text-text-primary">
                     All rows already imported
@@ -352,7 +449,20 @@ export default function UploadPage() {
           {step === 2 && (
             <Button
               variant="ghost"
-              onClick={() => setStep(1)}
+              onClick={() => {
+                setStep(1);
+                if (mapperData.current) {
+                  setRestoredMapperData({
+                    fileName: mapperData.current.file.name,
+                    fileSize: mapperData.current.file.size,
+                    content: mapperData.current.content,
+                    source: mapperData.current.source,
+                    mapping: mapperData.current.mapping,
+                    headers: mapperData.current.headers,
+                    totalRows: mapperData.current.totalRows,
+                  });
+                }
+              }}
               className="text-[13px] text-text-muted hover:text-text-secondary"
             >
               <ArrowLeft className="mr-1.5 h-4 w-4" />
@@ -415,6 +525,29 @@ function DetailedImportResultView({
   result: ImportResultDetailed | null;
   isImporting: boolean;
 }) {
+  // Animated progress: starts fast, decelerates, caps at 90%
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    if (!isImporting) {
+      setProgress(0);
+      return;
+    }
+
+    const HALF_LIFE = 15_000; // reaches ~50% at 15s, ~90% at ~50s
+    const RATE = Math.LN2 / HALF_LIFE; // exponential decay constant
+    const INTERVAL = 200;
+    let elapsed = 0;
+
+    const timer = setInterval(() => {
+      elapsed += INTERVAL;
+      // Exponential ease-out: fast start, continuously decelerates, never hits 100%
+      setProgress(100 * (1 - Math.exp(-RATE * elapsed)));
+    }, INTERVAL);
+
+    return () => clearInterval(timer);
+  }, [isImporting]);
+
   if (isImporting) {
     return (
       <div className="flex flex-col items-center justify-center py-16">
@@ -428,7 +561,7 @@ function DetailedImportResultView({
           Stitching identities, writing records, detecting conflicts
         </p>
         <div className="mt-6 w-64">
-          <Progress value={66} className="h-1.5" />
+          <Progress value={progress} className="h-1.5" />
         </div>
       </div>
     );
@@ -445,8 +578,8 @@ function DetailedImportResultView({
       <div className="flex flex-col items-center text-center py-6">
         {isFullSuccess ? (
           <>
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100">
-              <CheckCircle2 className="h-7 w-7 text-emerald-600" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 dark:bg-emerald-500/10">
+              <CheckCircle2 className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
             </div>
             <p className="mt-4 text-[16px] font-semibold text-text-primary">
               Import complete
@@ -458,8 +591,8 @@ function DetailedImportResultView({
           </>
         ) : isPartial ? (
           <>
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100">
-              <FileText className="h-7 w-7 text-amber-600" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 dark:bg-amber-500/10">
+              <FileText className="h-7 w-7 text-amber-600 dark:text-amber-400" />
             </div>
             <p className="mt-4 text-[16px] font-semibold text-text-primary">
               Import completed with issues
@@ -471,8 +604,8 @@ function DetailedImportResultView({
           </>
         ) : (
           <>
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-100">
-              <XCircle className="h-7 w-7 text-rose-600" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-100 dark:bg-rose-500/10">
+              <XCircle className="h-7 w-7 text-rose-600 dark:text-rose-400" />
             </div>
             <p className="mt-4 text-[16px] font-semibold text-text-primary">
               Import failed
@@ -546,13 +679,13 @@ function DetailedImportResultView({
 
       {/* Errors list */}
       {result.errors.length > 0 && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50/30 overflow-hidden">
-          <div className="border-b border-rose-100 px-5 py-3">
-            <p className="text-[12px] font-medium text-rose-700">
+        <div className="rounded-xl border border-rose-200 dark:border-rose-500/20 bg-rose-50/30 dark:bg-rose-500/5 overflow-hidden">
+          <div className="border-b border-rose-100 dark:border-rose-500/20 px-5 py-3">
+            <p className="text-[12px] font-medium text-rose-700 dark:text-rose-400">
               Errors ({result.errors.length})
             </p>
           </div>
-          <div className="max-h-[200px] overflow-y-auto divide-y divide-rose-100">
+          <div className="max-h-[200px] overflow-y-auto divide-y divide-rose-100 dark:divide-rose-500/20">
             {result.errors.slice(0, 20).map((err, i) => (
               <div key={i} className="px-5 py-2.5">
                 <p className="text-[12px] text-rose-700">

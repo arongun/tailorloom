@@ -100,6 +100,21 @@ export const STRIPE_SCHEMA: SourceSchema = {
       description: "Payment status",
     },
     {
+      key: "customer_external_id",
+      label: "Customer ID",
+      type: "text",
+      required: false,
+      aliases: [
+        "stripe_customer_id",
+        "customer_id",
+        "customer id",
+        "cus_id",
+        "stripe customer id",
+      ],
+      samplePattern: /^cus_/,
+      description: "Stripe customer ID (e.g. cus_xxx)",
+    },
+    {
       key: "payment_date",
       label: "Payment Date",
       type: "timestamp",
@@ -123,6 +138,7 @@ export const STRIPE_SCHEMA: SourceSchema = {
   emailField: "customer_email",
   nameField: "customer_name",
   phoneField: "phone",
+  customerIdField: "customer_external_id",
 };
 
 export const CALENDLY_SCHEMA: SourceSchema = {

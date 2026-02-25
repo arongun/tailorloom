@@ -77,6 +77,7 @@ export interface PreviewResult {
 export type StitchMatchCategory =
   | "external_id"
   | "email"
+  | "email_name_mismatch"
   | "phone"
   | "name_match"
   | "name_conflict"
@@ -112,10 +113,13 @@ export interface StitchPreviewRow {
   confidence: number;
   candidates: StitchCandidate[];
   enrichableFields: EnrichableField[];
+  rawRow?: Record<string, string>;
 }
 
 export type StitchDecision =
   | { action: "merge"; targetCustomerId: string }
+  | { action: "merge_keep_name"; targetCustomerId: string }
+  | { action: "merge_update_name"; targetCustomerId: string }
   | { action: "create_new" }
   | { action: "skip" }
   | { action: "accept_enrichment"; targetCustomerId: string };
@@ -125,6 +129,7 @@ export type StitchDecisions = Record<number, StitchDecision>;
 export interface StitchPreviewSummary {
   confidentMatches: number;
   uncertainMatches: number;
+  nameReviewMatches: number;
   newCustomers: number;
   duplicateRows: number;
   enrichments: number;
@@ -134,6 +139,7 @@ export interface StitchPreviewSummary {
 export interface StitchPreviewResult {
   summary: StitchPreviewSummary;
   uncertainRows: StitchPreviewRow[];
+  nameReviewRows: StitchPreviewRow[];
   confidentRows: StitchPreviewRow[];
   newRows: StitchPreviewRow[];
   duplicateRows: StitchPreviewRow[];

@@ -16,6 +16,8 @@ import {
   ArrowRight,
   Loader2,
   X,
+  Eye,
+  ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { searchCustomers } from "@/lib/actions/dashboard";
@@ -66,7 +68,7 @@ export function StitchPreview({
   return (
     <div className="space-y-5">
       {/* Summary cards */}
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <SummaryCard
           label="Confident Matches"
           value={summary.confidentMatches}
@@ -76,13 +78,23 @@ export function StitchPreview({
           description="Matched by ID or email"
         />
         <SummaryCard
-          label="Enrichment"
+          label="Match + Enrich"
           value={summary.enrichments}
-          icon={<Pencil className="h-4 w-4 text-amber-500" />}
-          borderColor="border-amber-200 dark:border-amber-700"
-          fillColor="bg-amber-50/50 dark:bg-amber-950/40"
-          description="Fill missing fields"
+          icon={<Pencil className="h-4 w-4 text-teal-500" />}
+          borderColor="border-teal-200 dark:border-teal-700"
+          fillColor="bg-teal-50/50 dark:bg-teal-950/40"
+          description="Matched with optional data fill"
         />
+        <SummaryCard
+          label="Review Name"
+          value={summary.nameReviewMatches}
+          icon={<AlertTriangle className="h-4 w-4 text-orange-500" />}
+          borderColor="border-orange-200 dark:border-orange-800"
+          fillColor="bg-orange-50/50 dark:bg-orange-950/40"
+          description="Email matched, name differs"
+        />
+      </div>
+      <div className="grid grid-cols-3 gap-3">
         <SummaryCard
           label="Needs Review"
           value={summary.uncertainMatches}
@@ -111,20 +123,20 @@ export function StitchPreview({
 
       {/* Data Enrichment section */}
       {result.enrichmentRows.length > 0 && (
-        <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/10 dark:bg-amber-950/20 overflow-hidden">
-          <div className="border-b border-amber-200/60 dark:border-amber-800/60 px-5 py-3 flex items-center justify-between">
+        <div className="rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50/10 dark:bg-teal-950/20 overflow-hidden">
+          <div className="border-b border-teal-200/60 dark:border-teal-800/60 px-5 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Pencil className="h-4 w-4 text-amber-500" />
-              <p className="text-[13px] font-medium text-amber-800 dark:text-amber-300">
-                Data Enrichment — {result.enrichmentRows.length}{" "}
-                {result.enrichmentRows.length === 1 ? "customer" : "customers"} can be updated
+              <Pencil className="h-4 w-4 text-teal-500" />
+              <p className="text-[13px] font-medium text-teal-800 dark:text-teal-300">
+                Confident Matches + Enrichment — {result.enrichmentRows.length}{" "}
+                {result.enrichmentRows.length === 1 ? "customer" : "customers"} matched
               </p>
             </div>
-            <p className="text-[11px] text-amber-600 dark:text-amber-400">
-              Fill in missing fields from CSV data
+            <p className="text-[11px] text-teal-600 dark:text-teal-400">
+              Matched by email or ID. You can optionally update their missing fields.
             </p>
           </div>
-          <div className="divide-y divide-amber-100 dark:divide-amber-900/40">
+          <div className="divide-y divide-teal-100 dark:divide-teal-900/40">
             {result.enrichmentRows.map((row) => (
               <EnrichmentRow
                 key={row.rowIndex}
@@ -132,6 +144,40 @@ export function StitchPreview({
                 decision={
                   decisions[row.rowIndex] ?? {
                     action: "accept_enrichment",
+                    targetCustomerId: row.existingCustomerId!,
+                  }
+                }
+                onDecisionChange={(d) => setDecision(row.rowIndex, d)}
+                onPeekCustomer={handlePeekCustomer}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Name review — email matched but name differs */}
+      {result.nameReviewRows.length > 0 && (
+        <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50/10 dark:bg-orange-950/20 overflow-hidden">
+          <div className="border-b border-orange-200/60 dark:border-orange-800/60 px-5 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-orange-500" />
+              <p className="text-[13px] font-medium text-orange-800 dark:text-orange-300">
+                Review Name — {result.nameReviewRows.length}{" "}
+                {result.nameReviewRows.length === 1 ? "match" : "matches"} with different names
+              </p>
+            </div>
+            <p className="text-[11px] text-orange-600 dark:text-orange-400">
+              Email matched, but the name in the CSV differs from the existing customer
+            </p>
+          </div>
+          <div className="divide-y divide-orange-100 dark:divide-orange-900/40">
+            {result.nameReviewRows.map((row) => (
+              <NameReviewRow
+                key={row.rowIndex}
+                row={row}
+                decision={
+                  decisions[row.rowIndex] ?? {
+                    action: "merge_keep_name",
                     targetCustomerId: row.existingCustomerId!,
                   }
                 }
@@ -155,7 +201,7 @@ export function StitchPreview({
               </p>
             </div>
             <p className="text-[11px] text-amber-600 dark:text-amber-400">
-              Matched by phone or name — please verify
+              No strong identifier (email/ID) found — matched by name only
             </p>
           </div>
           <div className="divide-y divide-amber-100 dark:divide-amber-900/40">
@@ -320,7 +366,7 @@ function EnrichmentRow({
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="font-mono text-[11px] text-amber-500 dark:text-amber-400">
+            <span className="font-mono text-[11px] text-teal-500 dark:text-teal-400">
               Row {row.rowIndex}
             </span>
             <MatchBadge category={row.category} />
@@ -328,7 +374,7 @@ function EnrichmentRow({
           <button
             type="button"
             onClick={() => row.existingCustomerId && onPeekCustomer(row.existingCustomerId)}
-            className="text-[13px] font-medium text-text-primary hover:text-amber-700 dark:hover:text-amber-300 hover:underline truncate text-left transition-colors"
+            className="text-[13px] font-medium text-text-primary hover:text-teal-700 dark:hover:text-teal-300 hover:underline truncate text-left transition-colors"
           >
             {row.existingCustomerName ?? "Unknown"}
           </button>
@@ -341,10 +387,10 @@ function EnrichmentRow({
             {row.enrichableFields.map((field) => (
               <span
                 key={field.field}
-                className="inline-flex items-center gap-1 rounded-md bg-amber-100/60 dark:bg-amber-900/30 px-2 py-0.5 text-[11px] text-amber-700 dark:text-amber-300"
+                className="inline-flex items-center gap-1 rounded-md bg-teal-100/60 dark:bg-teal-900/30 px-2 py-0.5 text-[11px] text-teal-700 dark:text-teal-300"
               >
-                <span className="text-amber-500 dark:text-amber-400">{FIELD_LABELS[field.field]}</span>
-                <ArrowRight className="h-3 w-3 text-amber-400 dark:text-amber-500" />
+                <span className="text-teal-500 dark:text-teal-400">{FIELD_LABELS[field.field]}</span>
+                <ArrowRight className="h-3 w-3 text-teal-400 dark:text-teal-500" />
                 <span className="font-medium">{field.newValue}</span>
               </span>
             ))}
@@ -364,6 +410,94 @@ function EnrichmentRow({
             icon={<Check className="h-3.5 w-3.5" />}
             label="Accept"
             activeColor="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700"
+          />
+          <DecisionButton
+            active={isSkipped}
+            onClick={() => onDecisionChange({ action: "skip" })}
+            icon={<SkipForward className="h-3.5 w-3.5" />}
+            label="Skip"
+            activeColor="bg-surface-muted text-text-secondary border-border-default"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NameReviewRow({
+  row,
+  decision,
+  onDecisionChange,
+  onPeekCustomer,
+}: {
+  row: StitchPreviewRow;
+  decision: StitchDecision;
+  onDecisionChange: (d: StitchDecision) => void;
+  onPeekCustomer: (id: string) => void;
+}) {
+  const isKeep = decision.action === "merge_keep_name";
+  const isUpdate = decision.action === "merge_update_name";
+  const isSkipped = decision.action === "skip";
+
+  return (
+    <div className="px-5 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="font-mono text-[11px] text-orange-500 dark:text-orange-400">
+              Row {row.rowIndex}
+            </span>
+            <MatchBadge category={row.category} />
+          </div>
+          <div className="flex items-center gap-3 mb-1">
+            <div className="min-w-0">
+              <p className="text-[11px] text-text-muted">Existing name</p>
+              <button
+                type="button"
+                onClick={() => row.existingCustomerId && onPeekCustomer(row.existingCustomerId)}
+                className="text-[13px] font-medium text-text-primary hover:text-orange-700 dark:hover:text-orange-300 hover:underline truncate text-left transition-colors"
+              >
+                {row.existingCustomerName ?? "Unknown"}
+              </button>
+            </div>
+            <span className="text-text-muted text-[12px] pt-3">&harr;</span>
+            <div className="min-w-0">
+              <p className="text-[11px] text-text-muted">CSV name</p>
+              <p className="text-[13px] font-medium text-orange-700 dark:text-orange-300 truncate">
+                {row.name ?? "—"}
+              </p>
+            </div>
+          </div>
+          <p className="text-[12px] text-text-muted truncate">
+            {row.email ?? row.existingCustomerEmail ?? "No email"}
+          </p>
+        </div>
+
+        {/* Decision buttons */}
+        <div className="flex items-center gap-1.5 pt-1 shrink-0">
+          <DecisionButton
+            active={isKeep}
+            onClick={() =>
+              onDecisionChange({
+                action: "merge_keep_name",
+                targetCustomerId: row.existingCustomerId!,
+              })
+            }
+            icon={<Check className="h-3.5 w-3.5" />}
+            label="Keep"
+            activeColor="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700"
+          />
+          <DecisionButton
+            active={isUpdate}
+            onClick={() =>
+              onDecisionChange({
+                action: "merge_update_name",
+                targetCustomerId: row.existingCustomerId!,
+              })
+            }
+            icon={<Pencil className="h-3.5 w-3.5" />}
+            label="Update"
+            activeColor="bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700"
           />
           <DecisionButton
             active={isSkipped}
@@ -423,81 +557,110 @@ function SingleCandidateRow({
   onDecisionChange: (d: StitchDecision) => void;
   onPeekCustomer: (id: string) => void;
 }) {
+  const [showRaw, setShowRaw] = useState(false);
+
   return (
-    <div className="px-5 py-4 flex items-start gap-4">
-      {/* CSV row info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-mono text-[11px] text-amber-500 dark:text-amber-400">
-            Row {row.rowIndex}
-          </span>
-          <MatchBadge category={row.category} />
-        </div>
-        <p className="text-[13px] font-medium text-text-primary truncate">
-          {row.name ?? "—"}
-        </p>
-        <p className="text-[12px] text-text-muted truncate">
-          {row.email ?? "No email"}
-        </p>
-        {row.phone && (
-          <p className="text-[11px] text-text-muted truncate">
-            {row.phone}
+    <div className="px-5 py-4">
+      <div className="flex items-start gap-4">
+        {/* CSV row info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-mono text-[11px] text-amber-500 dark:text-amber-400">
+              Row {row.rowIndex}
+            </span>
+            <MatchBadge category={row.category} />
+            {row.rawRow && (
+              <button
+                type="button"
+                onClick={() => setShowRaw(!showRaw)}
+                className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+              >
+                {showRaw ? (
+                  <ChevronUp className="h-3 w-3" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" />
+                )}
+                CSV data
+              </button>
+            )}
+          </div>
+          <p className="text-[13px] font-medium text-text-primary truncate">
+            {row.name ?? "—"}
           </p>
-        )}
+          <p className="text-[12px] text-text-muted truncate">
+            {row.email ?? "No email"}
+          </p>
+          {row.phone && (
+            <p className="text-[11px] text-text-muted truncate">
+              {row.phone}
+            </p>
+          )}
+        </div>
+
+        {/* Arrow */}
+        <div className="flex items-center pt-4 text-text-muted">
+          <span className="text-[12px]">&harr;</span>
+        </div>
+
+        {/* Existing customer */}
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] text-text-muted mb-1">Existing customer</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-[13px] font-medium text-text-primary truncate">
+              {row.existingCustomerName ?? "—"}
+            </p>
+            {row.existingCustomerId && (
+              <button
+                type="button"
+                onClick={() => onPeekCustomer(row.existingCustomerId!)}
+                className="flex items-center gap-1 shrink-0 rounded-md border border-border-muted px-1.5 py-0.5 text-[10px] text-text-muted hover:text-text-secondary hover:border-border-default transition-colors"
+              >
+                <Eye className="h-3 w-3" />
+                View
+              </button>
+            )}
+          </div>
+          <p className="text-[12px] text-text-muted truncate">
+            {row.existingCustomerEmail ?? "No email"}
+          </p>
+        </div>
+
+        {/* Decision buttons */}
+        <div className="flex items-center gap-1.5 pt-2 shrink-0">
+          <DecisionButton
+            active={
+              decision.action === "merge" &&
+              decision.targetCustomerId === row.existingCustomerId
+            }
+            onClick={() =>
+              onDecisionChange({
+                action: "merge",
+                targetCustomerId: row.existingCustomerId!,
+              })
+            }
+            icon={<Check className="h-3.5 w-3.5" />}
+            label="Merge"
+            activeColor="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700"
+          />
+          <DecisionButton
+            active={decision.action === "create_new"}
+            onClick={() => onDecisionChange({ action: "create_new" })}
+            icon={<Plus className="h-3.5 w-3.5" />}
+            label="New"
+            activeColor="bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700"
+          />
+          <DecisionButton
+            active={decision.action === "skip"}
+            onClick={() => onDecisionChange({ action: "skip" })}
+            icon={<SkipForward className="h-3.5 w-3.5" />}
+            label="Skip"
+            activeColor="bg-surface-muted text-text-secondary border-border-default"
+          />
+        </div>
       </div>
 
-      {/* Arrow */}
-      <div className="flex items-center pt-4 text-text-muted">
-        <span className="text-[12px]">&harr;</span>
-      </div>
-
-      {/* Existing customer */}
-      <div className="flex-1 min-w-0">
-        <p className="text-[11px] text-text-muted mb-1">Existing customer</p>
-        <button
-          type="button"
-          onClick={() => row.existingCustomerId && onPeekCustomer(row.existingCustomerId)}
-          className="text-[13px] font-medium text-text-primary hover:text-amber-700 dark:hover:text-amber-300 hover:underline truncate text-left transition-colors"
-        >
-          {row.existingCustomerName ?? "—"}
-        </button>
-        <p className="text-[12px] text-text-muted truncate">
-          {row.existingCustomerEmail ?? "No email"}
-        </p>
-      </div>
-
-      {/* Decision buttons */}
-      <div className="flex items-center gap-1.5 pt-2 shrink-0">
-        <DecisionButton
-          active={
-            decision.action === "merge" &&
-            decision.targetCustomerId === row.existingCustomerId
-          }
-          onClick={() =>
-            onDecisionChange({
-              action: "merge",
-              targetCustomerId: row.existingCustomerId!,
-            })
-          }
-          icon={<Check className="h-3.5 w-3.5" />}
-          label="Merge"
-          activeColor="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700"
-        />
-        <DecisionButton
-          active={decision.action === "create_new"}
-          onClick={() => onDecisionChange({ action: "create_new" })}
-          icon={<Plus className="h-3.5 w-3.5" />}
-          label="New"
-          activeColor="bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700"
-        />
-        <DecisionButton
-          active={decision.action === "skip"}
-          onClick={() => onDecisionChange({ action: "skip" })}
-          icon={<SkipForward className="h-3.5 w-3.5" />}
-          label="Skip"
-          activeColor="bg-surface-muted text-text-secondary border-border-default"
-        />
-      </div>
+      {/* Expandable raw CSV row */}
+      {showRaw && row.rawRow && <RawRowDetail rawRow={row.rawRow} />}
     </div>
   );
 }
@@ -513,6 +676,8 @@ function MultiCandidateRow({
   onDecisionChange: (d: StitchDecision) => void;
   onPeekCustomer: (id: string) => void;
 }) {
+  const [showRaw, setShowRaw] = useState(false);
+
   return (
     <div className="px-5 py-4">
       {/* CSV row header */}
@@ -532,7 +697,24 @@ function MultiCandidateRow({
             {row.phone}
           </span>
         )}
+        {row.rawRow && (
+          <button
+            type="button"
+            onClick={() => setShowRaw(!showRaw)}
+            className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary transition-colors"
+          >
+            {showRaw ? (
+              <ChevronUp className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )}
+            CSV data
+          </button>
+        )}
       </div>
+
+      {/* Expandable raw CSV row */}
+      {showRaw && row.rawRow && <RawRowDetail rawRow={row.rawRow} />}
 
       {/* Candidate list */}
       <div className="ml-4 space-y-1.5 mb-3">
@@ -615,16 +797,22 @@ function CandidateOption({
       </div>
 
       <div className="flex-1 min-w-0">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onPeek();
-          }}
-          className="text-[12px] font-medium text-text-primary hover:text-amber-700 dark:hover:text-amber-300 hover:underline truncate text-left transition-colors"
-        >
-          {candidate.customerName ?? "Unknown"}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <p className="text-[12px] font-medium text-text-primary truncate">
+            {candidate.customerName ?? "Unknown"}
+          </p>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onPeek();
+            }}
+            className="flex items-center gap-1 shrink-0 rounded-md border border-border-muted px-1.5 py-0.5 text-[10px] text-text-muted hover:text-text-secondary hover:border-border-default transition-colors"
+          >
+            <Eye className="h-3 w-3" />
+            View
+          </button>
+        </div>
         <p className="text-[11px] text-text-muted truncate">
           {candidate.customerEmail ?? "No email"}
           {candidate.customerPhone ? ` · ${candidate.customerPhone}` : ""}
@@ -870,14 +1058,52 @@ function DecisionButton({
   );
 }
 
+function RawRowDetail({ rawRow }: { rawRow: Record<string, string> }) {
+  const entries = Object.entries(rawRow);
+
+  return (
+    <div className="mt-2 mb-1 rounded-lg border border-border-muted overflow-hidden">
+      <div className="overflow-x-auto pb-2">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-surface-muted/50 dark:bg-surface-muted/30">
+              {entries.map(([key]) => (
+                <th
+                  key={key}
+                  className="px-3 py-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-wide whitespace-nowrap border-b border-border-muted"
+                >
+                  {key}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="bg-surface">
+              {entries.map(([key, value]) => (
+                <td
+                  key={key}
+                  className="px-3 py-2 text-[11px] text-text-secondary whitespace-nowrap border-b border-border-muted"
+                >
+                  {value || <span className="text-text-muted">—</span>}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function MatchBadge({ category }: { category: string }) {
   const config: Record<string, { label: string; color: string }> = {
     external_id: { label: "ID", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
     email: { label: "Email", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+    email_name_mismatch: { label: "Email (Name Differs)", color: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300" },
     phone: { label: "Phone", color: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" },
     name_match: { label: "Name", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
     name_conflict: { label: "Name", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
-    enrichment: { label: "Enrich", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
+    enrichment: { label: "Match + Enrich", color: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" },
     new: { label: "New", color: "bg-surface-muted text-text-secondary" },
     duplicate: { label: "Dup", color: "bg-surface-muted text-text-muted" },
   };
@@ -930,12 +1156,13 @@ function CollapsibleSection({
           : "bg-surface-elevated/30";
 
   return (
-    <div className={cn("rounded-xl border overflow-hidden", borderColor)}>
+    <div className={cn("rounded-xl border", borderColor)}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
         className={cn(
-          "w-full flex items-center justify-between px-5 py-3 text-left transition-colors hover:bg-surface-elevated/50",
+          "w-full flex items-center justify-between px-5 py-3 text-left transition-colors hover:bg-surface-elevated/50 rounded-t-[11px]",
+          !open && "rounded-b-[11px]",
           headerBg
         )}
       >

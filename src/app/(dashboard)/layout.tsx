@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { Sidebar } from "@/components/sidebar";
 import { SidebarProvider } from "@/components/sidebar-provider";
 import { DashboardMain } from "@/components/dashboard-main";
+import { DateRangeProvider } from "@/app/(dashboard)/dashboard-context";
 
 export const metadata = {
   title: "TailorLoom — Revenue Intelligence Console",
@@ -17,7 +18,9 @@ export default function DashboardLayout({
   return (
     <SidebarProvider>
       <Sidebar />
-      <DashboardMain>{children}</DashboardMain>
+      <DashboardMain>
+        <DateRangeProvider>{children}</DateRangeProvider>
+      </DashboardMain>
       <Toaster position="bottom-right" richColors />
     </SidebarProvider>
   );

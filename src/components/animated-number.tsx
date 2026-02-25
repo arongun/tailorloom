@@ -15,16 +15,31 @@ export function AnimatedNumber({
   prefix = "",
   suffix = "",
   decimals = 0,
-  duration = 1200,
+  duration = 800,
 }: AnimatedNumberProps) {
-  const [displayValue, setDisplayValue] = useState(0);
-  const previousValue = useRef(0);
+  // Initialize display to the actual value so mount/tab-switch shows instantly
+  const [displayValue, setDisplayValue] = useState(value);
+  const previousValue = useRef(value);
+  const hasMounted = useRef(false);
   const animationFrame = useRef<number | null>(null);
   const startTime = useRef<number | null>(null);
 
   useEffect(() => {
+    // Skip animation on first mount — just show the value
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      setDisplayValue(value);
+      previousValue.current = value;
+      return;
+    }
+
+    // On subsequent value changes, animate the transition
     const from = previousValue.current;
     const to = value;
+
+    // No animation needed if value hasn't changed
+    if (from === to) return;
+
     startTime.current = null;
 
     const animate = (timestamp: number) => {

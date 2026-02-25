@@ -82,6 +82,57 @@ export async function getImportHistory(options?: {
   };
 }
 
+// ─── Import Row Viewer ────────────────────────────────────
+
+const SOURCE_TABLE: Record<string, string> = {
+  stripe: "payments",
+  pos: "payments",
+  calendly: "bookings",
+  passline: "attendance",
+  wetravel: "payments", // raw_data is the full CSV row in both tables; use payments to avoid dupes
+};
+
+export async function getImportRows(
+  importId: string
+): Promise<{ headers: string[]; rows: Record<string, string>[] }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const admin = createAdminClient();
+
+  // Get the import record to determine source
+  const { data: imp, error: impError } = await admin
+    .from("import_history")
+    .select("source")
+    .eq("id", importId)
+    .eq("org_id", DEFAULT_ORG_ID)
+    .single();
+
+  if (impError || !imp) throw new Error("Import not found");
+
+  const table = SOURCE_TABLE[imp.source];
+  if (!table) throw new Error(`Unknown source: ${imp.source}`);
+
+  const { data, error } = await admin
+    .from(table)
+    .select("raw_data")
+    .eq("import_id", importId)
+    .order("created_at", { ascending: true });
+
+  if (error) throw new Error(`Failed to fetch rows: ${error.message}`);
+
+  const rows: Record<string, string>[] = (data ?? []).map(
+    (r: { raw_data: Record<string, string> }) => r.raw_data
+  );
+
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+  return { headers, rows };
+}
+
 // ─── Conflicts ─────────────────────────────────────────────
 
 export async function getStitchingConflicts(options?: {

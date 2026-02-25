@@ -141,6 +141,24 @@ export async function previewStitchIdentity(
           enrichableFields,
         };
       }
+
+      // Detect name mismatch: email matches but names differ
+      if (
+        name &&
+        customerByEmail.full_name &&
+        customerByEmail.full_name.toLowerCase() !== name.toLowerCase()
+      ) {
+        return {
+          category: "email_name_mismatch",
+          existingCustomerId: customerByEmail.id,
+          existingCustomerName: customerByEmail.full_name,
+          existingCustomerEmail: customerByEmail.email,
+          confidence: 0.95,
+          candidates: [],
+          enrichableFields: [],
+        };
+      }
+
       return {
         category: "email",
         existingCustomerId: customerByEmail.id,
@@ -176,6 +194,23 @@ export async function previewStitchIdentity(
             enrichableFields,
           };
         }
+      }
+
+      // Detect name mismatch on customer_sources email match
+      if (
+        name &&
+        c?.full_name &&
+        c.full_name.toLowerCase() !== name.toLowerCase()
+      ) {
+        return {
+          category: "email_name_mismatch",
+          existingCustomerId: sourceByEmail.customer_id,
+          existingCustomerName: c.full_name,
+          existingCustomerEmail: c.email,
+          confidence: 0.9,
+          candidates: [],
+          enrichableFields: [],
+        };
       }
 
       return {
@@ -399,13 +434,22 @@ export async function stitchIdentity(
   name: string | null,
   phone: string | null,
   forceCustomerId?: string,
-  enrichFields?: { full_name?: string; email?: string; phone?: string }
+  enrichFields?: { full_name?: string; email?: string; phone?: string },
+  forceNameUpdate?: string
 ): Promise<StitchResult> {
   // If user explicitly chose to merge or accept enrichment, skip cascade
   if (forceCustomerId) {
-    // Apply enrichment if provided
+    // Apply enrichment if provided (only fills null fields)
     if (enrichFields && Object.keys(enrichFields).length > 0) {
       await enrichCustomer(admin, forceCustomerId, enrichFields);
+    }
+
+    // If merge_update_name was chosen, force-overwrite the customer's name
+    if (forceNameUpdate) {
+      await admin
+        .from("customers")
+        .update({ full_name: forceNameUpdate, updated_at: new Date().toISOString() })
+        .eq("id", forceCustomerId);
     }
 
     await linkSourceToCustomer(
@@ -419,7 +463,7 @@ export async function stitchIdentity(
     return {
       customerId: forceCustomerId,
       isNew: false,
-      matchedBy: "name",
+      matchedBy: "email",
     };
   }
 

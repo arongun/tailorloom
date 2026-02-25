@@ -43,6 +43,7 @@ import type {
   SavedMapping,
 } from "@/lib/types";
 import type { DetectionResult } from "@/lib/csv/detect-source";
+import type { MapperRestoredData } from "@/lib/upload-session";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ interface UploadMapperProps {
     mapping: Record<string, string>,
     headers: string[]
   ) => void;
+  initialData?: MapperRestoredData | null;
 }
 
 interface ColumnDropdownProps {
@@ -94,10 +96,10 @@ function SourcePicker({
   onSelect: (source: SourceType) => void;
 }) {
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50/40 p-4 space-y-3">
+    <div className="rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/40 dark:bg-amber-500/5 p-4 space-y-3">
       <div className="flex items-center gap-2">
         <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
-        <p className="text-[12px] font-medium text-amber-800">
+        <p className="text-[12px] font-medium text-amber-800 dark:text-amber-300">
           Couldn&apos;t confidently detect the source type. Which is it?
         </p>
       </div>
@@ -267,8 +269,10 @@ export function UploadMapper({
   onReady,
   onClear,
   onSaveTemplate,
+  initialData,
 }: UploadMapperProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const restoredRef = useRef(false);
 
   // File state
   const [file, setFile] = useState<File | null>(null);
@@ -327,6 +331,37 @@ export function UploadMapper({
     () => allRows.slice(0, visibleRowCount),
     [allRows, visibleRowCount]
   );
+
+  // Restore from initialData on mount
+  useEffect(() => {
+    if (!initialData || restoredRef.current) return;
+    restoredRef.current = true;
+
+    const parsed = parseCSVContent(initialData.content);
+    const syntheticFile = new File([initialData.content], initialData.fileName, {
+      type: "text/csv",
+    });
+
+    setFile(syntheticFile);
+    setFileContent(initialData.content);
+    setHeaders(parsed.headers);
+    setAllRows(parsed.rows);
+    setTotalRows(parsed.totalRows);
+    setSampleRows(parsed.sampleRows);
+    setDetectedSource(initialData.source);
+    setMapping(initialData.mapping);
+
+    const schema = getSchema(initialData.source);
+    if (schema) {
+      setSuggestions(
+        generateMappingSuggestions(parsed.headers, schema, parsed.sampleRows)
+      );
+    }
+
+    getSavedMappings(initialData.source)
+      .then(setSavedMappings)
+      .catch(() => {});
+  }, [initialData]);
 
   // Notify parent when mapping changes
   useEffect(() => {
@@ -634,7 +669,7 @@ export function UploadMapper({
       {/* Compact file bar + detected source + toolbar */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 shrink-0">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 dark:bg-emerald-500/10 shrink-0">
             <FileText
               className="h-4 w-4 text-emerald-600"
               strokeWidth={1.8}
@@ -718,9 +753,9 @@ export function UploadMapper({
 
       {/* Missing required warning */}
       {missingRequired.length > 0 && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2">
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-500/20 bg-amber-50/60 dark:bg-amber-500/5 px-3 py-2">
           <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-          <p className="text-[11px] text-amber-700">
+          <p className="text-[11px] text-amber-700 dark:text-amber-300">
             <span className="font-medium">Required fields not mapped:</span>{" "}
             {missingRequired.map((f) => f.label).join(", ")}
           </p>
@@ -789,7 +824,7 @@ export function UploadMapper({
                         className={cn(
                           "px-3 py-2.5 text-[12px] max-w-[220px] border-r border-border-muted last:border-r-0",
                           isMapped ? "text-text-secondary" : "text-text-muted",
-                          cellWarning && "bg-rose-50/40"
+                          cellWarning && "bg-rose-50/40 dark:bg-rose-500/5"
                         )}
                       >
                         <span className="block truncate">{val || "—"}</span>

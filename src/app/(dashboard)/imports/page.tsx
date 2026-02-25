@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Undo2,
+  Eye,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,7 @@ import {
   revertImport,
   type ImportHistoryRow,
 } from "@/lib/actions/history";
+import { CsvViewerSheet } from "@/components/csv-viewer-sheet";
 import type { SourceType } from "@/lib/types";
 import { toast } from "sonner";
 
@@ -59,32 +61,32 @@ const SOURCE_CONFIG: Record<
   stripe: {
     label: "Stripe",
     icon: CreditCard,
-    color: "text-violet-700",
-    bg: "bg-violet-100",
+    color: "text-violet-700 dark:text-violet-400",
+    bg: "bg-violet-100 dark:bg-violet-500/10",
   },
   calendly: {
     label: "Calendly",
     icon: Calendar,
-    color: "text-blue-700",
-    bg: "bg-blue-100",
+    color: "text-blue-700 dark:text-blue-400",
+    bg: "bg-blue-100 dark:bg-blue-500/10",
   },
   passline: {
     label: "PassLine",
     icon: Ticket,
-    color: "text-emerald-700",
-    bg: "bg-emerald-100",
+    color: "text-emerald-700 dark:text-emerald-400",
+    bg: "bg-emerald-100 dark:bg-emerald-500/10",
   },
   pos: {
     label: "POS",
     icon: ShoppingBag,
-    color: "text-orange-700",
-    bg: "bg-orange-100",
+    color: "text-orange-700 dark:text-orange-400",
+    bg: "bg-orange-100 dark:bg-orange-500/10",
   },
   wetravel: {
     label: "WeTravel",
     icon: Globe,
-    color: "text-cyan-700",
-    bg: "bg-cyan-100",
+    color: "text-cyan-700 dark:text-cyan-400",
+    bg: "bg-cyan-100 dark:bg-cyan-500/10",
   },
 };
 
@@ -94,27 +96,27 @@ const STATUS_CONFIG: Record<
 > = {
   completed: {
     label: "Completed",
-    className: "bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border-emerald-200",
+    className: "bg-emerald-50 text-emerald-700 hover:bg-emerald-50 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/10 dark:border-emerald-500/20",
   },
   processing: {
     label: "Processing",
-    className: "bg-blue-50 text-blue-700 hover:bg-blue-50 border-blue-200",
+    className: "bg-blue-50 text-blue-700 hover:bg-blue-50 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:hover:bg-blue-500/10 dark:border-blue-500/20",
   },
   failed: {
     label: "Failed",
-    className: "bg-rose-50 text-rose-700 hover:bg-rose-50 border-rose-200",
+    className: "bg-rose-50 text-rose-700 hover:bg-rose-50 border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/10 dark:border-rose-500/20",
   },
   pending: {
     label: "Pending",
-    className: "bg-slate-50 text-slate-600 hover:bg-slate-50 border-slate-200",
+    className: "bg-surface-muted text-text-secondary hover:bg-surface-muted border-border-default",
   },
   skipped: {
     label: "Skipped",
-    className: "bg-amber-50 text-amber-700 hover:bg-amber-50 border-amber-200",
+    className: "bg-amber-50 text-amber-700 hover:bg-amber-50 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/10 dark:border-amber-500/20",
   },
   reverted: {
     label: "Reverted",
-    className: "bg-slate-100 text-slate-500 hover:bg-slate-100 border-slate-200",
+    className: "bg-surface-muted text-text-muted hover:bg-surface-muted border-border-default",
   },
 };
 
@@ -127,6 +129,9 @@ export default function ImportsPage() {
   const [revertingId, setRevertingId] = useState<string | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const [openDialogId, setOpenDialogId] = useState<string | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewingImportId, setViewingImportId] = useState<string | null>(null);
+  const [viewingFileName, setViewingFileName] = useState("");
 
   const fetchImports = useCallback(async () => {
     setLoading(true);
@@ -246,7 +251,7 @@ export default function ImportsPage() {
                     Errors
                   </TableHead>
                   <TableHead className="text-[12px]">Date</TableHead>
-                  <TableHead className="text-[12px] w-[80px]" />
+                  <TableHead className="text-[12px] w-[140px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -313,76 +318,94 @@ export default function ImportsPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {canRevert && (
-                          <AlertDialog
-                            open={openDialogId === imp.id}
-                            onOpenChange={(open) => {
-                              setOpenDialogId(open ? imp.id : null);
-                              if (!open) setConfirmText("");
-                            }}
-                          >
-                            <AlertDialogTrigger asChild>
+                        <div className="flex items-center gap-1">
+                          {imp.status !== "pending" &&
+                            imp.status !== "processing" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 px-2 text-[11px] text-text-muted hover:text-rose-600"
-                                disabled={isReverting}
+                                className="h-7 px-2 text-[11px] text-text-muted hover:text-text-primary"
+                                onClick={() => {
+                                  setViewingImportId(imp.id);
+                                  setViewingFileName(imp.file_name);
+                                  setViewerOpen(true);
+                                }}
                               >
-                                {isReverting ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <>
-                                    <Undo2 className="h-3 w-3 mr-1" />
-                                    Revert
-                                  </>
-                                )}
+                                <Eye className="h-3 w-3 mr-1" />
+                                View
                               </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  Revert this import?
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This will delete all {imp.imported_rows}{" "}
-                                  records created by{" "}
-                                  <span className="font-medium">
-                                    {imp.file_name}
-                                  </span>
-                                  . Customers with no remaining data from
-                                  other imports will also be removed. This
-                                  cannot be undone.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <div className="mt-2">
-                                <label className="text-[13px] text-text-secondary">
-                                  Type <span className="font-semibold">delete</span> to confirm
-                                </label>
-                                <Input
-                                  value={confirmText}
-                                  onChange={(e) => setConfirmText(e.target.value)}
-                                  placeholder="delete"
-                                  className="mt-1.5 text-[13px]"
-                                  autoComplete="off"
-                                />
-                              </div>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            )}
+                          {canRevert && (
+                            <AlertDialog
+                              open={openDialogId === imp.id}
+                              onOpenChange={(open) => {
+                                setOpenDialogId(open ? imp.id : null);
+                                if (!open) setConfirmText("");
+                              }}
+                            >
+                              <AlertDialogTrigger asChild>
                                 <Button
-                                  disabled={confirmText !== "delete"}
-                                  onClick={() => {
-                                    setOpenDialogId(null);
-                                    setConfirmText("");
-                                    handleRevert(imp.id);
-                                  }}
-                                  className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-[11px] text-text-muted hover:text-rose-600"
+                                  disabled={isReverting}
                                 >
-                                  Revert import
+                                  {isReverting ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <Undo2 className="h-3 w-3 mr-1" />
+                                      Revert
+                                    </>
+                                  )}
                                 </Button>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>
+                                    Revert this import?
+                                  </AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will delete all {imp.imported_rows}{" "}
+                                    records created by{" "}
+                                    <span className="font-medium">
+                                      {imp.file_name}
+                                    </span>
+                                    . Customers with no remaining data from
+                                    other imports will also be removed. This
+                                    cannot be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <div className="mt-2">
+                                  <label className="text-[13px] text-text-secondary">
+                                    Type <span className="font-semibold">revert</span> to confirm
+                                  </label>
+                                  <Input
+                                    value={confirmText}
+                                    onChange={(e) => setConfirmText(e.target.value)}
+                                    placeholder="revert"
+                                    className="mt-1.5 text-[13px]"
+                                    autoComplete="off"
+                                  />
+                                </div>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <Button
+                                    disabled={confirmText !== "revert"}
+                                    onClick={() => {
+                                      setOpenDialogId(null);
+                                      setConfirmText("");
+                                      handleRevert(imp.id);
+                                    }}
+                                    className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50"
+                                  >
+                                    Revert import
+                                  </Button>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -421,6 +444,14 @@ export default function ImportsPage() {
           </>
         )}
       </Card>
+
+      {/* CSV Viewer Sheet */}
+      <CsvViewerSheet
+        open={viewerOpen}
+        onOpenChange={setViewerOpen}
+        importId={viewingImportId}
+        fileName={viewingFileName}
+      />
     </div>
   );
 }

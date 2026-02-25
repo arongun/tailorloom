@@ -6,6 +6,7 @@ import {
   CreditCard,
   Calendar,
   UserCheck,
+  ChevronDown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,12 +20,14 @@ import { Separator } from "@/components/ui/separator";
 import { getCustomerDetail } from "@/lib/actions/dashboard";
 import type { CustomerDetail } from "@/lib/actions/dashboard";
 
+type TransactionDetail = CustomerDetail["transactions"][number];
+
 const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
-  stripe: { label: "Stripe", color: "bg-violet-50 text-violet-700" },
-  calendly: { label: "Calendly", color: "bg-blue-50 text-blue-700" },
-  passline: { label: "PassLine", color: "bg-orange-50 text-orange-700" },
-  pos: { label: "POS", color: "bg-emerald-50 text-emerald-700" },
-  wetravel: { label: "WeTravel", color: "bg-cyan-50 text-cyan-700" },
+  stripe: { label: "Stripe", color: "bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400" },
+  calendly: { label: "Calendly", color: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400" },
+  passline: { label: "PassLine", color: "bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400" },
+  pos: { label: "POS", color: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400" },
+  wetravel: { label: "WeTravel", color: "bg-cyan-50 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-400" },
   manual: { label: "Manual", color: "bg-surface-muted text-text-secondary" },
 };
 
@@ -33,6 +36,174 @@ const TRANSACTION_ICONS: Record<string, typeof CreditCard> = {
   booking: Calendar,
   attendance: UserCheck,
 };
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-4">
+      <span className="text-[11px] text-text-muted uppercase tracking-wide shrink-0">
+        {label}
+      </span>
+      <span className="text-[12px] text-text-primary text-right break-all">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function formatTimestamp(dateStr: string) {
+  return new Date(dateStr).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function TransactionDetailPanel({
+  tx,
+  rawDataExpanded,
+  onToggleRawData,
+}: {
+  tx: TransactionDetail;
+  rawDataExpanded: boolean;
+  onToggleRawData: () => void;
+}) {
+  const hasRawData =
+    tx.raw_data && typeof tx.raw_data === "object" && Object.keys(tx.raw_data).length > 0;
+
+  const hasAttribution =
+    tx.utm_source || tx.utm_medium || tx.utm_campaign || tx.utm_content ||
+    tx.referrer || tx.referral_partner || tx.lead_source_channel || tx.lead_capture_method;
+
+  return (
+    <div className="border-t border-border-muted bg-surface-muted/50 px-3 py-3 space-y-3">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+        {/* Payment fields */}
+        {tx.type === "payment" && (
+          <>
+            {tx.external_payment_id && (
+              <DetailRow label="Payment ID" value={tx.external_payment_id} />
+            )}
+            {tx.payment_type && (
+              <DetailRow label="Type" value={tx.payment_type} />
+            )}
+            {tx.status && (
+              <DetailRow label="Status" value={tx.status} />
+            )}
+            {tx.amount !== null && (
+              <DetailRow
+                label="Amount"
+                value={`$${tx.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}${tx.currency ? ` ${tx.currency.toUpperCase()}` : ""}`}
+              />
+            )}
+            <DetailRow label="Date" value={formatTimestamp(tx.date)} />
+            <DetailRow label="Source" value={SOURCE_LABELS[tx.source]?.label ?? tx.source} />
+          </>
+        )}
+
+        {/* Booking fields */}
+        {tx.type === "booking" && (
+          <>
+            {tx.external_booking_id && (
+              <DetailRow label="Booking ID" value={tx.external_booking_id} />
+            )}
+            {tx.event_type && (
+              <DetailRow label="Event" value={tx.event_type} />
+            )}
+            {tx.status && (
+              <DetailRow label="Status" value={tx.status} />
+            )}
+            {tx.start_time && (
+              <DetailRow label="Start" value={formatTimestamp(tx.start_time)} />
+            )}
+            {tx.end_time && (
+              <DetailRow label="End" value={formatTimestamp(tx.end_time)} />
+            )}
+            {(tx.start_date || tx.end_date) && (
+              <DetailRow
+                label="Dates"
+                value={[tx.start_date, tx.end_date].filter(Boolean).join(" → ")}
+              />
+            )}
+            <DetailRow label="Source" value={SOURCE_LABELS[tx.source]?.label ?? tx.source} />
+          </>
+        )}
+
+        {/* Attendance fields */}
+        {tx.type === "attendance" && (
+          <>
+            {tx.external_attendance_id && (
+              <DetailRow label="Attendance ID" value={tx.external_attendance_id} />
+            )}
+            {tx.event_name && (
+              <DetailRow label="Event" value={tx.event_name} />
+            )}
+            {tx.ticket_type && (
+              <DetailRow label="Ticket Type" value={tx.ticket_type} />
+            )}
+            <DetailRow label="Check-in" value={formatTimestamp(tx.date)} />
+            <DetailRow label="Source" value={SOURCE_LABELS[tx.source]?.label ?? tx.source} />
+          </>
+        )}
+      </div>
+
+      {/* Attribution section for bookings */}
+      {tx.type === "booking" && hasAttribution && (
+        <div>
+          <p className="text-[11px] text-text-muted uppercase tracking-wide font-medium mb-2">
+            Attribution
+          </p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+            {tx.utm_source && <DetailRow label="UTM Source" value={tx.utm_source} />}
+            {tx.utm_medium && <DetailRow label="UTM Medium" value={tx.utm_medium} />}
+            {tx.utm_campaign && <DetailRow label="UTM Campaign" value={tx.utm_campaign} />}
+            {tx.utm_content && <DetailRow label="UTM Content" value={tx.utm_content} />}
+            {tx.referrer && <DetailRow label="Referrer" value={tx.referrer} />}
+            {tx.referral_partner && <DetailRow label="Referral Partner" value={tx.referral_partner} />}
+            {tx.lead_source_channel && <DetailRow label="Lead Channel" value={tx.lead_source_channel} />}
+            {tx.lead_capture_method && <DetailRow label="Lead Capture" value={tx.lead_capture_method} />}
+          </div>
+        </div>
+      )}
+
+      {/* Raw data section */}
+      {hasRawData && (
+        <div>
+          <button
+            type="button"
+            className="flex items-center gap-1 text-[11px] text-text-muted uppercase tracking-wide font-medium cursor-pointer hover:text-text-secondary transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleRawData();
+            }}
+          >
+            Raw Data
+            <ChevronDown
+              className={`h-3 w-3 transition-transform duration-150 ${
+                rawDataExpanded ? "rotate-180" : ""
+              }`}
+            />
+          </button>
+          <div
+            className="grid transition-[grid-template-rows] duration-150 ease-out"
+            style={{
+              gridTemplateRows: rawDataExpanded ? "1fr" : "0fr",
+            }}
+          >
+            <div className="overflow-hidden">
+              {rawDataExpanded && (
+                <pre className="text-[11px] text-text-primary bg-surface-elevated rounded-md p-3 overflow-x-auto max-h-[200px] mt-2">
+                  {JSON.stringify(tx.raw_data, null, 2)}
+                </pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface CustomerDetailSheetProps {
   open: boolean;
@@ -47,11 +218,15 @@ export function CustomerDetailSheet({
 }: CustomerDetailSheetProps) {
   const [detail, setDetail] = useState<CustomerDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
+  const [rawDataExpanded, setRawDataExpanded] = useState(false);
 
   useEffect(() => {
     if (open && customerId) {
       setLoading(true);
       setDetail(null);
+      setExpandedTxId(null);
+      setRawDataExpanded(false);
       getCustomerDetail(customerId)
         .then((d) => setDetail(d))
         .catch(() => setDetail(null))
@@ -61,9 +236,9 @@ export function CustomerDetailSheet({
 
   const statusBadge = (status: string) => {
     const styles: Record<string, string> = {
-      Active: "bg-emerald-50 text-emerald-700 hover:bg-emerald-50",
-      "At Risk": "bg-amber-50 text-amber-700 hover:bg-amber-50",
-      Churned: "bg-rose-50 text-rose-700 hover:bg-rose-50",
+      Active: "bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/10",
+      "At Risk": "bg-amber-50 text-amber-700 hover:bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/10",
+      Churned: "bg-rose-50 text-rose-700 hover:bg-rose-50 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/10",
     };
     return (
       <Badge
@@ -98,7 +273,7 @@ export function CustomerDetailSheet({
                 </p>
               )}
               {detail.customer.sources.length > 0 && (
-                <div className="flex items-center gap-1.5 mt-2">
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
                   {detail.customer.sources.map((s) => {
                     const info = SOURCE_LABELS[s] ?? {
                       label: s,
@@ -165,47 +340,118 @@ export function CustomerDetailSheet({
                     label: tx.source,
                     color: "bg-surface-muted text-text-secondary",
                   };
+                  const isRefunded = tx.status === "refunded";
+                  const isFailed = tx.status === "failed";
+                  const isNonRevenue = isRefunded || isFailed;
+                  const isExpanded = expandedTxId === tx.id;
                   return (
                     <div
                       key={tx.id}
-                      className="flex items-start justify-between rounded-lg border border-border-muted p-3"
+                      className={`rounded-lg border transition-colors ${
+                        isNonRevenue
+                          ? "border-border-muted/60 opacity-60"
+                          : isExpanded
+                            ? "border-border-default"
+                            : "border-border-muted"
+                      }`}
                     >
-                      <div className="flex items-start gap-3 flex-1 min-w-0">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-surface-elevated mt-0.5">
-                          <Icon className="h-3.5 w-3.5 text-text-muted" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[13px] font-medium text-text-primary truncate">
-                            {tx.description}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge
-                              variant="secondary"
-                              className={`text-[10px] font-medium px-1.5 py-0 ${sourceInfo.color}`}
-                            >
-                              {sourceInfo.label}
-                            </Badge>
-                            <span className="text-[11px] text-text-muted">
-                              {new Date(tx.date).toLocaleDateString(
-                                "en-US",
-                                {
-                                  month: "short",
-                                  day: "numeric",
-                                  year: "numeric",
-                                }
+                      <button
+                        type="button"
+                        className="flex items-start justify-between w-full p-3 cursor-pointer text-left hover:bg-surface-muted/30 rounded-lg transition-colors"
+                        onClick={() => {
+                          if (isExpanded) {
+                            setExpandedTxId(null);
+                          } else {
+                            setExpandedTxId(tx.id);
+                            setRawDataExpanded(false);
+                          }
+                        }}
+                      >
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-surface-elevated mt-0.5 shrink-0">
+                            <Icon className="h-3.5 w-3.5 text-text-muted" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-[13px] font-medium truncate ${
+                              isNonRevenue
+                                ? "text-text-muted line-through"
+                                : "text-text-primary"
+                            }`}>
+                              {tx.description}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <Badge
+                                variant="secondary"
+                                className={`text-[10px] font-medium px-1.5 py-0 ${sourceInfo.color}`}
+                              >
+                                {sourceInfo.label}
+                              </Badge>
+                              {isRefunded && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] font-medium px-1.5 py-0 bg-rose-50 text-rose-600"
+                                >
+                                  Refunded
+                                </Badge>
                               )}
-                            </span>
+                              {isFailed && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] font-medium px-1.5 py-0 bg-surface-muted text-text-muted"
+                                >
+                                  Failed
+                                </Badge>
+                              )}
+                              <span className="text-[11px] text-text-muted">
+                                {new Date(tx.date).toLocaleDateString(
+                                  "en-US",
+                                  {
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  }
+                                )}
+                              </span>
+                            </div>
                           </div>
                         </div>
+                        <div className="flex items-center gap-2 ml-4 shrink-0">
+                          {tx.amount !== null && (
+                            <p className={`text-[14px] font-semibold tabular-nums ${
+                              isNonRevenue
+                                ? "text-text-muted line-through"
+                                : "text-text-primary"
+                            }`}>
+                              $
+                              {tx.amount.toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                              })}
+                            </p>
+                          )}
+                          <ChevronDown
+                            className={`h-3.5 w-3.5 text-text-muted transition-transform duration-150 ${
+                              isExpanded ? "rotate-180" : ""
+                            }`}
+                          />
+                        </div>
+                      </button>
+                      {/* Expandable detail panel */}
+                      <div
+                        className="grid transition-[grid-template-rows] duration-150 ease-out"
+                        style={{
+                          gridTemplateRows: isExpanded ? "1fr" : "0fr",
+                        }}
+                      >
+                        <div className="overflow-hidden">
+                          {isExpanded && (
+                            <TransactionDetailPanel
+                              tx={tx}
+                              rawDataExpanded={rawDataExpanded}
+                              onToggleRawData={() => setRawDataExpanded(!rawDataExpanded)}
+                            />
+                          )}
+                        </div>
                       </div>
-                      {tx.amount !== null && (
-                        <p className="text-[14px] font-semibold text-text-primary tabular-nums ml-4">
-                          $
-                          {tx.amount.toLocaleString("en-US", {
-                            minimumFractionDigits: 2,
-                          })}
-                        </p>
-                      )}
                     </div>
                   );
                 })}
