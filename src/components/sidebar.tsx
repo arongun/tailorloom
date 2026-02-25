@@ -67,7 +67,7 @@ export function Sidebar() {
               src="/tailorloom-logo.png"
               alt="TailorLoom"
               className={cn(
-                "h-8 w-auto transition-opacity duration-200",
+                "h-[44px] w-auto transition-opacity duration-200",
                 collapsed ? "opacity-0" : "opacity-100"
               )}
             />
