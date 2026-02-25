@@ -60,7 +60,7 @@ export function Sidebar() {
       <aside
         onClick={handleSidebarClick}
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border-default bg-surface transition-all duration-200 overflow-hidden",
+          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border-default bg-surface transition-[width] duration-200 overflow-hidden",
           collapsed ? "cursor-pointer" : ""
         )}
         style={{

@@ -11,7 +11,7 @@ export function DashboardMain({ children }: { children: React.ReactNode }) {
 
   return (
     <main
-      className="min-h-screen transition-all duration-200"
+      className="min-h-screen transition-[margin-left] duration-200"
       style={{
         marginLeft: collapsed ? SIDEBAR_COLLAPSED_W : SIDEBAR_EXPANDED_W,
       }}
