@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -33,7 +34,6 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -125,6 +125,8 @@ export default function ImportsPage() {
   const [page, setPage] = useState(0);
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [revertingId, setRevertingId] = useState<string | null>(null);
+  const [confirmText, setConfirmText] = useState("");
+  const [openDialogId, setOpenDialogId] = useState<string | null>(null);
 
   const fetchImports = useCallback(async () => {
     setLoading(true);
@@ -312,7 +314,13 @@ export default function ImportsPage() {
                       </TableCell>
                       <TableCell>
                         {canRevert && (
-                          <AlertDialog>
+                          <AlertDialog
+                            open={openDialogId === imp.id}
+                            onOpenChange={(open) => {
+                              setOpenDialogId(open ? imp.id : null);
+                              if (!open) setConfirmText("");
+                            }}
+                          >
                             <AlertDialogTrigger asChild>
                               <Button
                                 variant="ghost"
@@ -346,14 +354,31 @@ export default function ImportsPage() {
                                   cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
+                              <div className="mt-2">
+                                <label className="text-[13px] text-text-secondary">
+                                  Type <span className="font-semibold">delete</span> to confirm
+                                </label>
+                                <Input
+                                  value={confirmText}
+                                  onChange={(e) => setConfirmText(e.target.value)}
+                                  placeholder="delete"
+                                  className="mt-1.5 text-[13px]"
+                                  autoComplete="off"
+                                />
+                              </div>
                               <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => handleRevert(imp.id)}
-                                  className="bg-rose-600 hover:bg-rose-700"
+                                <Button
+                                  disabled={confirmText !== "delete"}
+                                  onClick={() => {
+                                    setOpenDialogId(null);
+                                    setConfirmText("");
+                                    handleRevert(imp.id);
+                                  }}
+                                  className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50"
                                 >
                                   Revert import
-                                </AlertDialogAction>
+                                </Button>
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
