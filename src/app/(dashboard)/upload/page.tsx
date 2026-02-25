@@ -228,7 +228,7 @@ export default function UploadPage() {
           Upload Data
         </h1>
         <p className="mt-1 text-[13px] text-slate-500">
-          Import CSV files from Stripe, Calendly, or PassLine
+          Import CSV files from Stripe, Calendly, PassLine, POS, or WeTravel
         </p>
       </div>
 

@@ -32,18 +32,18 @@ export async function previewStitchIdentity(
   if (externalId) {
     const { data: existingSource } = await admin
       .from("customer_sources")
-      .select("customer_id, customers(id, name, email)")
+      .select("customer_id, customers(id, full_name, email)")
       .eq("source", source)
       .eq("external_id", externalId)
       .maybeSingle();
 
     if (existingSource) {
-      const cArr = existingSource.customers as unknown as { id: string; name: string | null; email: string | null }[] | null;
+      const cArr = existingSource.customers as unknown as { id: string; full_name: string | null; email: string | null }[] | null;
       const c = cArr?.[0] ?? null;
       return {
         category: "external_id",
         existingCustomerId: existingSource.customer_id,
-        existingCustomerName: c?.name ?? null,
+        existingCustomerName: c?.full_name ?? null,
         existingCustomerEmail: c?.email ?? null,
         confidence: 1.0,
       };
@@ -54,7 +54,7 @@ export async function previewStitchIdentity(
   if (email) {
     const { data: customerByEmail } = await admin
       .from("customers")
-      .select("id, name, email")
+      .select("id, full_name, email")
       .eq("org_id", DEFAULT_ORG_ID)
       .eq("email", email)
       .maybeSingle();
@@ -63,7 +63,7 @@ export async function previewStitchIdentity(
       return {
         category: "email",
         existingCustomerId: customerByEmail.id,
-        existingCustomerName: customerByEmail.name,
+        existingCustomerName: customerByEmail.full_name,
         existingCustomerEmail: customerByEmail.email,
         confidence: 0.95,
       };
@@ -71,18 +71,18 @@ export async function previewStitchIdentity(
 
     const { data: sourceByEmail } = await admin
       .from("customer_sources")
-      .select("customer_id, customers(id, name, email)")
+      .select("customer_id, customers(id, full_name, email)")
       .eq("external_email", email)
       .limit(1)
       .maybeSingle();
 
     if (sourceByEmail) {
-      const cArr = sourceByEmail.customers as unknown as { id: string; name: string | null; email: string | null }[] | null;
+      const cArr = sourceByEmail.customers as unknown as { id: string; full_name: string | null; email: string | null }[] | null;
       const c = cArr?.[0] ?? null;
       return {
         category: "email",
         existingCustomerId: sourceByEmail.customer_id,
-        existingCustomerName: c?.name ?? null,
+        existingCustomerName: c?.full_name ?? null,
         existingCustomerEmail: c?.email ?? null,
         confidence: 0.9,
       };
@@ -93,9 +93,9 @@ export async function previewStitchIdentity(
   if (name) {
     const { data: customersByName } = await admin
       .from("customers")
-      .select("id, email, name")
+      .select("id, email, full_name")
       .eq("org_id", DEFAULT_ORG_ID)
-      .ilike("name", name)
+      .ilike("full_name", name)
       .limit(5);
 
     if (customersByName && customersByName.length === 1) {
@@ -104,7 +104,7 @@ export async function previewStitchIdentity(
         return {
           category: "name_conflict",
           existingCustomerId: existing.id,
-          existingCustomerName: existing.name,
+          existingCustomerName: existing.full_name,
           existingCustomerEmail: existing.email,
           confidence: 0.6,
         };
@@ -131,24 +131,45 @@ export async function checkDuplicateRow(
   source: SourceType,
   externalId: string
 ): Promise<boolean> {
-  const table =
-    source === "stripe"
-      ? "payments"
-      : source === "calendly"
-        ? "bookings"
-        : "attendance";
+  let table: string;
+  let idColumn: string;
+  let sourceFilter: string;
 
-  const idColumn =
-    source === "stripe"
-      ? "stripe_payment_id"
-      : source === "calendly"
-        ? "calendly_event_id"
-        : "passline_id";
+  switch (source) {
+    case "stripe":
+      table = "payments";
+      idColumn = "external_payment_id";
+      sourceFilter = "stripe";
+      break;
+    case "pos":
+      table = "payments";
+      idColumn = "external_payment_id";
+      sourceFilter = "pos";
+      break;
+    case "calendly":
+      table = "bookings";
+      idColumn = "external_booking_id";
+      sourceFilter = "calendly";
+      break;
+    case "wetravel":
+      table = "bookings";
+      idColumn = "external_booking_id";
+      sourceFilter = "wetravel";
+      break;
+    case "passline":
+      table = "attendance";
+      idColumn = "external_attendance_id";
+      sourceFilter = "passline";
+      break;
+    default:
+      return false;
+  }
 
   const { data } = await admin
     .from(table)
     .select("id")
     .eq(idColumn, externalId)
+    .eq("source", sourceFilter)
     .limit(1)
     .maybeSingle();
 
@@ -269,7 +290,7 @@ export async function stitchIdentity(
       .from("customers")
       .select("id, email")
       .eq("org_id", DEFAULT_ORG_ID)
-      .ilike("name", name)
+      .ilike("full_name", name)
       .limit(5);
 
     if (customersByName && customersByName.length === 1) {
@@ -330,7 +351,7 @@ async function createCustomer(
     .insert({
       org_id: DEFAULT_ORG_ID,
       email,
-      name,
+      full_name: name,
     })
     .select("id")
     .single();
@@ -437,7 +458,7 @@ export async function detectPostImportConflicts(
   // Get customer details for this import's customers
   const { data: importCustomers } = await admin
     .from("customers")
-    .select("id, name, email")
+    .select("id, full_name, email")
     .in("id", Array.from(importCustomerIds));
 
   if (!importCustomers) return 0;
@@ -446,13 +467,13 @@ export async function detectPostImportConflicts(
 
   // Check for name collisions with different emails across all customers
   for (const customer of importCustomers) {
-    if (!customer.name) continue;
+    if (!customer.full_name) continue;
 
     const { data: nameMatches } = await admin
       .from("customers")
       .select("id, email")
       .eq("org_id", DEFAULT_ORG_ID)
-      .ilike("name", customer.name)
+      .ilike("full_name", customer.full_name)
       .neq("id", customer.id);
 
     if (!nameMatches) continue;
@@ -475,7 +496,7 @@ export async function detectPostImportConflicts(
             customer.id,
             match.id,
             "name",
-            customer.name,
+            customer.full_name,
             0.5,
             importId
           );

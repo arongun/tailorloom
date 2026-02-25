@@ -1,0 +1,6 @@
+stripe_customer_id,stripe_payment_id,email,full_name,phone,amount,currency,payment_date,status
+cus_001,pay_1001,kate@email.com,Kate Siakpere,123-456-7890,120.0,USD,2026-02-09,succeeded
+cus_002,pay_1002,john@email.com,John Smith,555-111-2222,75.0,USD,2026-01-05,succeeded
+cus_003,pay_1003,maria@email.com,Maria Lopez,,200.0,USD,2026-02-14,succeeded
+cus_004,pay_1004,john@email.com,John Smith,555-111-2222,50.0,USD,2026-02-16,succeeded
+cus_005,pay_1005,,No Email User,999-888-7777,60.0,USD,2026-01-30,succeeded

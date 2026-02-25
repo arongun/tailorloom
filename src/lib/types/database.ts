@@ -1,10 +1,10 @@
 // Database types matching the Supabase schema
 // These will be replaced by auto-generated types from `supabase gen types` once the schema is live
 
-export type SourceType = "stripe" | "calendly" | "passline" | "manual";
+export type SourceType = "stripe" | "calendly" | "passline" | "pos" | "wetravel" | "manual";
 export type ImportStatus = "pending" | "processing" | "completed" | "failed";
-export type PaymentStatus = "succeeded" | "pending" | "failed" | "refunded";
-export type BookingStatus = "scheduled" | "completed" | "cancelled" | "no_show";
+export type PaymentStatus = "succeeded" | "pending" | "failed" | "refunded" | "approved";
+export type BookingStatus = "scheduled" | "completed" | "cancelled" | "no_show" | "confirmed";
 export type ConflictStatus = "pending" | "merged" | "dismissed" | "split";
 
 export interface Organization {
@@ -17,9 +17,10 @@ export interface Organization {
 export interface Customer {
   id: string;
   org_id: string;
-  name: string | null;
+  full_name: string | null;
   email: string | null;
   phone: string | null;
+  country: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -66,13 +67,13 @@ export interface Payment {
   org_id: string;
   customer_id: string | null;
   import_id: string | null;
-  stripe_payment_id: string | null;
-  stripe_customer_id: string | null;
+  external_payment_id: string | null;
+  source: string;
   amount: number;
   currency: string;
   status: PaymentStatus;
   payment_date: string;
-  description: string | null;
+  payment_type: string | null;
   raw_data: Record<string, unknown> | null;
   created_at: string;
 }
@@ -82,11 +83,22 @@ export interface Booking {
   org_id: string;
   customer_id: string | null;
   import_id: string | null;
-  calendly_event_id: string | null;
+  external_booking_id: string | null;
+  source: string;
   event_type: string | null;
   start_time: string;
   end_time: string | null;
+  start_date: string | null;
+  end_date: string | null;
   status: BookingStatus;
+  lead_source_channel: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_content: string | null;
+  referrer: string | null;
+  referral_partner: string | null;
+  lead_capture_method: string | null;
   raw_data: Record<string, unknown> | null;
   created_at: string;
 }
@@ -96,11 +108,22 @@ export interface Attendance {
   org_id: string;
   customer_id: string | null;
   import_id: string | null;
-  passline_id: string | null;
+  external_attendance_id: string | null;
+  source: string;
   event_name: string | null;
   check_in_time: string;
+  ticket_type: string | null;
   raw_data: Record<string, unknown> | null;
   created_at: string;
+}
+
+export interface InsightConfig {
+  id: string;
+  org_id: string;
+  churn_days: number;
+  high_value_threshold: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface SavedMapping {

@@ -108,13 +108,12 @@ export async function GET() {
             const { error } = await admin.from("payments").insert({
               customer_id: customerId,
               import_id: importId,
-              stripe_payment_id: mapped.stripe_payment_id,
-              stripe_customer_id: mapped.stripe_customer_id,
+              external_payment_id: mapped.external_payment_id,
+              source: "stripe",
               amount: parseCurrency(mapped.amount ?? "0") ?? 0,
               currency: mapped.currency ?? "USD",
               status: (mapped.status?.toLowerCase() ?? "succeeded") as "succeeded" | "pending" | "failed" | "refunded",
               payment_date: parseTimestamp(mapped.payment_date ?? "") ?? new Date().toISOString(),
-              description: mapped.description,
               raw_data: rawRow,
             });
             if (error) {
@@ -126,7 +125,8 @@ export async function GET() {
             const { error } = await admin.from("bookings").insert({
               customer_id: customerId,
               import_id: importId,
-              calendly_event_id: mapped.calendly_event_id,
+              external_booking_id: mapped.external_booking_id,
+              source: "calendly",
               event_type: mapped.event_type,
               start_time: parseTimestamp(mapped.start_time ?? "") ?? new Date().toISOString(),
               end_time: mapped.end_time ? parseTimestamp(mapped.end_time) : null,
@@ -142,9 +142,11 @@ export async function GET() {
             const { error } = await admin.from("attendance").insert({
               customer_id: customerId,
               import_id: importId,
-              passline_id: mapped.passline_id,
+              external_attendance_id: mapped.external_attendance_id,
+              source: "passline",
               event_name: mapped.event_name,
               check_in_time: parseTimestamp(mapped.check_in_time ?? "") ?? new Date().toISOString(),
+              ticket_type: mapped.ticket_type ?? null,
               raw_data: rawRow,
             });
             if (error) {
@@ -208,7 +210,7 @@ export async function GET() {
 
   const { data: janeCustomer } = await admin
     .from("customers")
-    .select("id, name, email")
+    .select("id, full_name, email")
     .eq("email", "jane@example.com");
 
   let janeSources = null;

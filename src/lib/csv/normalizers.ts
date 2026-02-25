@@ -15,10 +15,14 @@ const PAYMENT_STATUS_MAP: Record<string, string> = {
   partially_refunded: "refunded",
 };
 
+const POS_STATUS_MAP: Record<string, string> = {
+  ...PAYMENT_STATUS_MAP,
+  approved: "approved",
+};
+
 const BOOKING_STATUS_MAP: Record<string, string> = {
   scheduled: "scheduled",
   active: "scheduled",
-  confirmed: "scheduled",
   upcoming: "scheduled",
   completed: "completed",
   done: "completed",
@@ -27,6 +31,11 @@ const BOOKING_STATUS_MAP: Record<string, string> = {
   no_show: "no_show",
   "no show": "no_show",
   noshow: "no_show",
+};
+
+const WETRAVEL_STATUS_MAP: Record<string, string> = {
+  ...BOOKING_STATUS_MAP,
+  confirmed: "confirmed",
 };
 
 /**
@@ -42,8 +51,12 @@ export function normalizeStatus(
   switch (source) {
     case "stripe":
       return PAYMENT_STATUS_MAP[normalized] ?? normalized;
+    case "pos":
+      return POS_STATUS_MAP[normalized] ?? normalized;
     case "calendly":
       return BOOKING_STATUS_MAP[normalized] ?? normalized;
+    case "wetravel":
+      return WETRAVEL_STATUS_MAP[normalized] ?? normalized;
     default:
       return normalized;
   }

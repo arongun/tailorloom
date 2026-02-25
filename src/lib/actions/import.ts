@@ -182,7 +182,13 @@ export async function previewStitching(options: {
 
     const externalId = mapped[schema.idField] ?? "";
     const email = mapped[schema.emailField] ?? null;
-    const name = mapped[schema.nameField] ?? null;
+    const name = schema.nameField ? (mapped[schema.nameField] ?? null) : null;
+
+    // For POS, use membership_id as the stitch external ID
+    const stitchExternalId =
+      options.source === "pos" && schema.customerIdField
+        ? (mapped[schema.customerIdField] ?? externalId)
+        : externalId;
 
     // Check duplicate first
     if (externalId) {
@@ -207,7 +213,7 @@ export async function previewStitching(options: {
     }
 
     // Preview stitch
-    const preview = await previewStitchIdentity(admin, options.source, externalId, email, name);
+    const preview = await previewStitchIdentity(admin, options.source, stitchExternalId, email, name);
 
     const row: StitchPreviewRow = {
       rowIndex: i + 1,
@@ -343,7 +349,13 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
     try {
       const externalId = mapped[schema.idField] ?? "";
       const email = mapped[schema.emailField] ?? null;
-      const name = mapped[schema.nameField] ?? null;
+      const name = schema.nameField ? (mapped[schema.nameField] ?? null) : null;
+
+      // For POS, use membership_id as the stitch external ID
+      const stitchExternalId =
+        options.source === "pos" && schema.customerIdField
+          ? (mapped[schema.customerIdField] ?? externalId)
+          : externalId;
 
       // Check for user skip decision
       const decision = decisions[i + 1]; // decisions are keyed by 1-based row index
@@ -363,7 +375,7 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
       const { customerId, isNew, matchedBy } = await stitchIdentity(
         admin,
         options.source,
-        externalId,
+        stitchExternalId,
         email,
         name,
         forceId
@@ -465,20 +477,40 @@ async function insertSourceRow(
       const { error } = await admin.from("payments").insert({
         customer_id: customerId,
         import_id: importId,
-        stripe_payment_id: mapped.stripe_payment_id,
-        stripe_customer_id: mapped.stripe_customer_id,
+        external_payment_id: mapped.external_payment_id,
+        source: "stripe",
         amount: parseCurrency(mapped.amount ?? "0") ?? 0,
         currency: mapped.currency ?? "USD",
         status: (mapped.status?.toLowerCase() as "succeeded" | "pending" | "failed" | "refunded") ?? "succeeded",
         payment_date: parseTimestamp(mapped.payment_date ?? "") ?? new Date().toISOString(),
-        description: mapped.description,
         raw_data: rawRow,
       });
 
       if (error) {
-        // Check for unique constraint violation (duplicate stripe_payment_id)
+        // Check for unique constraint violation (duplicate)
         if (error.code === "23505") return false;
         throw new Error(`Payment insert failed: ${error.message}`);
+      }
+      return true;
+    }
+
+    case "pos": {
+      const { error } = await admin.from("payments").insert({
+        customer_id: customerId,
+        import_id: importId,
+        external_payment_id: mapped.external_payment_id,
+        source: "pos",
+        amount: parseCurrency(mapped.amount ?? "0") ?? 0,
+        currency: mapped.currency ?? "USD",
+        status: (mapped.status?.toLowerCase() as "approved" | "succeeded" | "pending" | "failed" | "refunded") ?? "approved",
+        payment_date: parseTimestamp(mapped.payment_date ?? "") ?? new Date().toISOString(),
+        payment_type: mapped.payment_type ?? null,
+        raw_data: rawRow,
+      });
+
+      if (error) {
+        if (error.code === "23505") return false;
+        throw new Error(`POS payment insert failed: ${error.message}`);
       }
       return true;
     }
@@ -487,7 +519,8 @@ async function insertSourceRow(
       const { error } = await admin.from("bookings").insert({
         customer_id: customerId,
         import_id: importId,
-        calendly_event_id: mapped.calendly_event_id,
+        external_booking_id: mapped.external_booking_id,
+        source: "calendly",
         event_type: mapped.event_type,
         start_time: parseTimestamp(mapped.start_time ?? "") ?? new Date().toISOString(),
         end_time: mapped.end_time ? parseTimestamp(mapped.end_time) : null,
@@ -502,13 +535,76 @@ async function insertSourceRow(
       return true;
     }
 
+    case "wetravel": {
+      // DUAL INSERT: one payment record + one booking record
+      const bookingDate = parseTimestamp(mapped.booking_date ?? "") ?? new Date().toISOString();
+      const bookingId = mapped.external_booking_id;
+      const status = mapped.status?.toLowerCase() ?? "confirmed";
+
+      // 1. Insert into payments
+      const { error: paymentError } = await admin.from("payments").insert({
+        customer_id: customerId,
+        import_id: importId,
+        external_payment_id: bookingId,
+        source: "wetravel",
+        amount: parseCurrency(mapped.amount_paid ?? "0") ?? 0,
+        currency: "USD",
+        status: status === "cancelled" ? "refunded" : "succeeded",
+        payment_date: bookingDate,
+        payment_type: mapped.payment_plan_type ?? null,
+        raw_data: rawRow,
+      });
+
+      if (paymentError) {
+        if (paymentError.code === "23505") {
+          // Duplicate — skip both inserts
+          return false;
+        }
+        throw new Error(`WeTravel payment insert failed: ${paymentError.message}`);
+      }
+
+      // 2. Insert into bookings
+      const { error: bookingError } = await admin.from("bookings").insert({
+        customer_id: customerId,
+        import_id: importId,
+        external_booking_id: bookingId,
+        source: "wetravel",
+        event_type: mapped.trip_name ?? null,
+        start_time: bookingDate,
+        start_date: mapped.trip_start_date ?? null,
+        end_date: mapped.trip_end_date ?? null,
+        status: status as "confirmed" | "cancelled" | "completed" | "scheduled",
+        lead_source_channel: mapped.lead_source_channel ?? null,
+        utm_source: mapped.utm_source ?? null,
+        utm_medium: mapped.utm_medium ?? null,
+        utm_campaign: mapped.utm_campaign ?? null,
+        utm_content: mapped.utm_content ?? null,
+        referrer: mapped.referrer ?? null,
+        referral_partner: mapped.referral_partner ?? null,
+        lead_capture_method: mapped.lead_capture_method ?? null,
+        raw_data: rawRow,
+      });
+
+      if (bookingError) {
+        if (bookingError.code === "23505") {
+          // Booking duplicate — payment already inserted; treat as success
+          // (edge case: payment succeeded but booking was duplicate)
+          return true;
+        }
+        throw new Error(`WeTravel booking insert failed: ${bookingError.message}`);
+      }
+      return true;
+    }
+
     case "passline": {
       const { error } = await admin.from("attendance").insert({
         customer_id: customerId,
         import_id: importId,
-        passline_id: mapped.passline_id,
+        external_attendance_id: mapped.external_attendance_id,
+        source: "passline",
         event_name: mapped.event_name,
         check_in_time: parseTimestamp(mapped.check_in_time ?? "") ?? new Date().toISOString(),
+        ticket_type: mapped.ticket_type ?? null,
         raw_data: rawRow,
       });
 

@@ -14,6 +14,8 @@ import {
   CreditCard,
   Calendar,
   Ticket,
+  ShoppingCart,
+  Plane,
   Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -80,6 +82,8 @@ const SOURCE_META: Record<
   stripe: { label: "Stripe", icon: CreditCard, color: "text-violet-500" },
   calendly: { label: "Calendly", icon: Calendar, color: "text-blue-500" },
   passline: { label: "PassLine", icon: Ticket, color: "text-emerald-500" },
+  pos: { label: "POS", icon: ShoppingCart, color: "text-orange-500" },
+  wetravel: { label: "WeTravel", icon: Plane, color: "text-cyan-500" },
 };
 
 function SourcePicker({
@@ -529,7 +533,7 @@ export function UploadMapper({
             <p className="mt-4 text-[13px] font-medium text-slate-700">
               {isDragging
                 ? "Drop your file here"
-                : "Drag & drop a CSV from Stripe, Calendly, or PassLine"}
+                : "Drag & drop a CSV from Stripe, Calendly, PassLine, POS, or WeTravel"}
             </p>
             <p className="mt-1 text-[12px] text-slate-400">
               or{" "}

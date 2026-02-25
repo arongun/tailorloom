@@ -18,6 +18,8 @@ export interface SourceSchema {
   idField: string;
   emailField: string;
   nameField: string;
+  customerIdField?: string;
+  phoneField?: string;
 }
 
 export interface ParseResult {

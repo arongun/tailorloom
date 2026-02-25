@@ -1,0 +1,6 @@
+pos_transaction_id,membership_id,member_email,member_phone,location,transaction_type,amount,currency,transaction_date,status
+pos_3001,mem_1001,kate@email.com,+1 (123) 456-7890,PBMX Front Desk,membership_renewal,120.0,USD,2026-02-13,approved
+pos_3002,mem_1002,john@email.com,+1 (555) 111-2222,PBMX Front Desk,drop_in,25.0,USD,2026-01-04,approved
+pos_3003,mem_1002,john@email.com,+1 (555) 111-2222,PBMX Front Desk,class_pack,100.0,USD,2026-02-20,approved
+pos_3004,mem_1003,,+1 (999) 888-7777,PBMX Front Desk,guest_pass,15.0,USD,2026-02-03,approved
+pos_3005,mem_2002,john@email.com,+1 (555) 111-2222,PBMX Front Desk,merch,35.0,USD,2026-02-21,approved

@@ -130,23 +130,23 @@ export async function getStitchingConflicts(options?: {
 
   const { data: customers } = await admin
     .from("customers")
-    .select("id, name, email")
+    .select("id, full_name, email")
     .in("id", Array.from(customerIds));
 
   const customerMap = new Map(
-    (customers ?? []).map((c) => [c.id, c])
+    (customers ?? []).map((c: { id: string; full_name: string | null; email: string | null }) => [c.id, c])
   );
 
-  const enriched: ConflictWithCustomers[] = conflicts.map((c) => {
+  const enriched: ConflictWithCustomers[] = conflicts.map((c: { id: string; customer_a_id: string; customer_b_id: string; match_field: string; match_value: string | null; confidence: number | null; status: string; created_at: string }) => {
     const a = customerMap.get(c.customer_a_id);
     const b = customerMap.get(c.customer_b_id);
     return {
       id: c.id,
       customer_a_id: c.customer_a_id,
-      customer_a_name: a?.name ?? null,
+      customer_a_name: a?.full_name ?? null,
       customer_a_email: a?.email ?? null,
       customer_b_id: c.customer_b_id,
-      customer_b_name: b?.name ?? null,
+      customer_b_name: b?.full_name ?? null,
       customer_b_email: b?.email ?? null,
       match_field: c.match_field,
       match_value: c.match_value,
@@ -250,19 +250,19 @@ export async function resolveConflict(
   // 5. Fill in missing fields on A from B
   const { data: customerA } = await admin
     .from("customers")
-    .select("name, email, phone")
+    .select("full_name, email, phone")
     .eq("id", keepId)
     .single();
 
   const { data: customerB } = await admin
     .from("customers")
-    .select("name, email, phone")
+    .select("full_name, email, phone")
     .eq("id", removeId)
     .single();
 
   if (customerA && customerB) {
     const updates: Record<string, string> = {};
-    if (!customerA.name && customerB.name) updates.name = customerB.name;
+    if (!customerA.full_name && customerB.full_name) updates.full_name = customerB.full_name;
     if (!customerA.email && customerB.email) updates.email = customerB.email;
     if (!customerA.phone && customerB.phone) updates.phone = customerB.phone;
 
