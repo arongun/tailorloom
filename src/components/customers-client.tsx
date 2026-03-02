@@ -1,24 +1,16 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Search,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
   X,
-  Filter,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -29,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { CustomerDetailSheet } from "@/components/customer-detail-sheet";
+import { FilterMultiSelect } from "@/components/filter-multi-select";
 import { riskBadge, tierBadge } from "@/components/badge-helpers";
 import type { ComputedCustomer, ResolvedConfig } from "@/lib/insights/types";
 import {
@@ -36,6 +29,8 @@ import {
   isRepeatCustomer,
   isInChannel,
 } from "@/lib/insights/metrics";
+
+// ── Constants ───────────────────────────────────────────────
 
 type SortKey =
   | "full_name"
@@ -89,64 +84,108 @@ const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
   },
 };
 
-const DRILLDOWN_LABELS: Record<string, string> = {
-  revenue_at_risk: "Revenue at Risk",
-  repeat_customers: "Repeat Customers",
-  channel: "Channel",
-};
+// ── Filter option definitions ───────────────────────────────
 
-export type RiskFilterValue = "all" | "Healthy" | "At Risk" | "Dormant" | "Lost";
-export type TierFilterValue = "all" | "Tier A" | "Tier B" | "Tier C";
-export type RepeatFilterValue = "all" | "repeat" | "one_time";
+const SEGMENT_OPTIONS = [
+  { value: "revenue_at_risk", label: "Revenue at Risk" },
+  { value: "repeat_customers", label: "Repeat Customers" },
+  { value: "channel", label: "Channel" },
+];
+const ALL_SEGMENTS = new Set(SEGMENT_OPTIONS.map((o) => o.value));
 
-interface InitialFilters {
-  risk: RiskFilterValue;
-  tier: TierFilterValue;
-  repeat: RepeatFilterValue;
-  channel: string; // "all" | dynamic channel name validated server-side
+const RISK_OPTIONS = [
+  { value: "Healthy", label: "Healthy" },
+  { value: "At Risk", label: "At Risk" },
+  { value: "Dormant", label: "Dormant" },
+  { value: "Lost", label: "Lost" },
+];
+const ALL_RISKS = new Set(RISK_OPTIONS.map((o) => o.value));
+
+const TIER_OPTIONS = [
+  { value: "Tier A", label: "Tier A" },
+  { value: "Tier B", label: "Tier B" },
+  { value: "Tier C", label: "Tier C" },
+];
+const ALL_TIERS = new Set(TIER_OPTIONS.map((o) => o.value));
+
+const REPEAT_OPTIONS = [
+  { value: "repeat", label: "Repeat" },
+  { value: "one_time", label: "One-time" },
+];
+const ALL_REPEATS = new Set(REPEAT_OPTIONS.map((o) => o.value));
+
+// ── URL helpers ─────────────────────────────────────────────
+
+/** Build initial Set from URL params — empty array = all selected (default) */
+function initSet(parsed: string[], allValues: Set<string>): Set<string> {
+  return parsed.length > 0 ? new Set(parsed) : new Set(allValues);
+}
+
+// ── Props ───────────────────────────────────────────────────
+
+export interface InitialFilterArrays {
+  segment: string[];
+  risk: string[];
+  tier: string[];
+  repeat: string[];
+  channel: string[];
 }
 
 interface CustomersClientProps {
   customers: ComputedCustomer[];
   config: ResolvedConfig;
-  activeInsightFilter: { type: string; value?: string } | null;
-  initialFilters?: InitialFilters;
+  initialFilters: InitialFilterArrays;
 }
+
+// ── Component ───────────────────────────────────────────────
 
 export function CustomersClient({
   customers,
   config,
-  activeInsightFilter,
   initialFilters,
 }: CustomersClientProps) {
-  const [search, setSearch] = useState("");
-  const [riskFilter, setRiskFilter] = useState<RiskFilterValue>(initialFilters?.risk ?? "all");
-  const [tierFilter, setTierFilter] = useState<TierFilterValue>(initialFilters?.tier ?? "all");
-  const [repeatFilter, setRepeatFilter] = useState<RepeatFilterValue>(initialFilters?.repeat ?? "all");
-  const [channelFilter, setChannelFilter] = useState<string>(initialFilters?.channel ?? "all");
-  const [sortKey, setSortKey] = useState<SortKey>("lifetime_revenue");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [sheetCustomerId, setSheetCustomerId] = useState<string | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [insightFilter, setInsightFilter] = useState(activeInsightFilter);
-
   // Derive available channels from customer data
-  const availableChannels = useMemo(() => {
+  const { channelOptions, allChannels } = useMemo(() => {
     const channels = new Set<string>();
     for (const c of customers) {
       for (const ch of Object.keys(c.channel_revenue)) channels.add(ch);
     }
-    return Array.from(channels).sort();
+    const sorted = Array.from(channels).sort();
+    return {
+      channelOptions: sorted.map((ch) => ({ value: ch, label: ch })),
+      allChannels: new Set(sorted),
+    };
   }, [customers]);
 
-  // Auto-open sheet if ?customer=<id> is in the URL — preserve other params
+  // ── State ───────────────────────────────────────────────
+  const [search, setSearch] = useState("");
+  const [segmentFilter, setSegmentFilter] = useState(() =>
+    initSet(initialFilters.segment, ALL_SEGMENTS)
+  );
+  const [riskFilter, setRiskFilter] = useState(() =>
+    initSet(initialFilters.risk, ALL_RISKS)
+  );
+  const [tierFilter, setTierFilter] = useState(() =>
+    initSet(initialFilters.tier, ALL_TIERS)
+  );
+  const [repeatFilter, setRepeatFilter] = useState(() =>
+    initSet(initialFilters.repeat, ALL_REPEATS)
+  );
+  const [channelFilter, setChannelFilter] = useState(() =>
+    initSet(initialFilters.channel, allChannels)
+  );
+  const [sortKey, setSortKey] = useState<SortKey>("lifetime_revenue");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [sheetCustomerId, setSheetCustomerId] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+
+  // ── Sheet auto-open from ?customer= ─────────────────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const customerId = params.get("customer");
     if (customerId) {
       setSheetCustomerId(customerId);
       setSheetOpen(true);
-      // Selectively remove only "customer" param, preserve insight/value/profile
       params.delete("customer");
       const remaining = params.toString();
       const newUrl = remaining
@@ -156,28 +195,35 @@ export function CustomersClient({
     }
   }, []);
 
+  // ── Filtering ───────────────────────────────────────────
   const filtered = useMemo(() => {
     let result = [...customers];
 
-    // Apply insight drilldown filter first
-    if (insightFilter) {
-      switch (insightFilter.type) {
-        case "revenue_at_risk":
-          result = result.filter((c) => isRevenueAtRisk(c, config));
-          break;
-        case "repeat_customers":
-          result = result.filter((c) => isRepeatCustomer(c));
-          break;
-        case "channel":
-          if (insightFilter.value) {
-            result = result.filter((c) =>
-              isInChannel(c, insightFilter.value!)
-            );
+    // Segment filter — OR within group using exact shared predicates
+    const segAll = segmentFilter.size === ALL_SEGMENTS.size;
+    if (!segAll && segmentFilter.size > 0) {
+      result = result.filter((c) => {
+        if (segmentFilter.has("revenue_at_risk") && isRevenueAtRisk(c, config))
+          return true;
+        if (segmentFilter.has("repeat_customers") && isRepeatCustomer(c))
+          return true;
+        if (segmentFilter.has("channel")) {
+          // Channel segment: customer passes if they're in ANY of the selected channels
+          const chAll = channelFilter.size === allChannels.size;
+          if (chAll) {
+            // All channels selected — any customer with channel data passes
+            if (Object.keys(c.channel_revenue).length > 0) return true;
+          } else {
+            for (const ch of channelFilter) {
+              if (isInChannel(c, ch)) return true;
+            }
           }
-          break;
-      }
+        }
+        return false;
+      });
     }
 
+    // Search
     if (search) {
       const tokens = search.toLowerCase().split(/\s+/).filter(Boolean);
       result = result.filter((c) => {
@@ -187,24 +233,37 @@ export function CustomersClient({
       });
     }
 
-    if (riskFilter !== "all") {
-      result = result.filter((c) => c.risk_status === riskFilter);
+    // Risk filter — OR within group
+    if (riskFilter.size < ALL_RISKS.size) {
+      result = result.filter((c) => riskFilter.has(c.risk_status));
     }
 
-    if (tierFilter !== "all") {
-      result = result.filter((c) => c.revenue_tier === tierFilter);
+    // Tier filter — OR within group
+    if (tierFilter.size < ALL_TIERS.size) {
+      result = result.filter((c) => tierFilter.has(c.revenue_tier));
     }
 
-    if (repeatFilter === "repeat") {
-      result = result.filter((c) => c.repeat_flag);
-    } else if (repeatFilter === "one_time") {
-      result = result.filter((c) => !c.repeat_flag);
+    // Repeat filter — OR within group
+    if (repeatFilter.size < ALL_REPEATS.size) {
+      result = result.filter((c) => {
+        if (repeatFilter.has("repeat") && c.repeat_flag) return true;
+        if (repeatFilter.has("one_time") && !c.repeat_flag) return true;
+        return false;
+      });
     }
 
-    if (channelFilter !== "all") {
-      result = result.filter((c) => channelFilter in c.channel_revenue);
+    // Channel filter (standalone, when segment is not active or is "all")
+    // Only apply as additive filter when segment is "all" (all selected)
+    if (segAll && channelFilter.size < allChannels.size && allChannels.size > 0) {
+      result = result.filter((c) => {
+        for (const ch of channelFilter) {
+          if (ch in c.channel_revenue) return true;
+        }
+        return false;
+      });
     }
 
+    // Sort
     result.sort((a, b) => {
       let cmp = 0;
       switch (sortKey) {
@@ -239,8 +298,30 @@ export function CustomersClient({
     });
 
     return result;
-  }, [customers, config, search, riskFilter, tierFilter, repeatFilter, channelFilter, sortKey, sortDir, insightFilter]);
+  }, [customers, config, segmentFilter, search, riskFilter, tierFilter, repeatFilter, channelFilter, allChannels, sortKey, sortDir]);
 
+  // ── URL sync ────────────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    // Helper: write set to URL as repeated params, omit if all selected
+    const syncSet = (key: string, set: Set<string>, allSet: Set<string>) => {
+      params.delete(key);
+      if (set.size < allSet.size) {
+        for (const v of set) params.append(key, v);
+      }
+    };
+    syncSet("segment", segmentFilter, ALL_SEGMENTS);
+    syncSet("risk", riskFilter, ALL_RISKS);
+    syncSet("tier", tierFilter, ALL_TIERS);
+    syncSet("repeat", repeatFilter, ALL_REPEATS);
+    syncSet("channel", channelFilter, allChannels);
+    const newUrl = params.toString()
+      ? `${window.location.pathname}?${params.toString()}`
+      : window.location.pathname;
+    window.history.replaceState({}, "", newUrl);
+  }, [segmentFilter, riskFilter, tierFilter, repeatFilter, channelFilter, allChannels]);
+
+  // ── Handlers ────────────────────────────────────────────
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir(sortDir === "asc" ? "desc" : "asc");
@@ -255,33 +336,23 @@ export function CustomersClient({
     setSheetOpen(true);
   };
 
-  const dismissInsightFilter = () => {
-    setInsightFilter(null);
-    // Remove insight + value from URL, preserve profile
-    const params = new URLSearchParams(window.location.search);
-    params.delete("insight");
-    params.delete("value");
-    const remaining = params.toString();
-    const newUrl = remaining
-      ? `${window.location.pathname}?${remaining}`
-      : window.location.pathname;
-    window.history.replaceState({}, "", newUrl);
-  };
+  const clearAllFilters = useCallback(() => {
+    setSegmentFilter(new Set(ALL_SEGMENTS));
+    setRiskFilter(new Set(ALL_RISKS));
+    setTierFilter(new Set(ALL_TIERS));
+    setRepeatFilter(new Set(ALL_REPEATS));
+    setChannelFilter(new Set(allChannels));
+  }, [allChannels]);
 
-  // Sync manual filters back to URL
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    riskFilter !== "all" ? params.set("risk", riskFilter) : params.delete("risk");
-    tierFilter !== "all" ? params.set("tier", tierFilter) : params.delete("tier");
-    repeatFilter !== "all" ? params.set("repeat", repeatFilter) : params.delete("repeat");
-    channelFilter !== "all" ? params.set("channel", channelFilter) : params.delete("channel");
-    const newUrl = params.toString()
-      ? `${window.location.pathname}?${params.toString()}`
-      : window.location.pathname;
-    window.history.replaceState({}, "", newUrl);
-  }, [riskFilter, tierFilter, repeatFilter, channelFilter]);
-
+  // ── Derived ─────────────────────────────────────────────
   const isActiveSort = (key: SortKey) => sortKey === key;
+
+  const hasActiveFilters =
+    segmentFilter.size < ALL_SEGMENTS.size ||
+    riskFilter.size < ALL_RISKS.size ||
+    tierFilter.size < ALL_TIERS.size ||
+    repeatFilter.size < ALL_REPEATS.size ||
+    (allChannels.size > 0 && channelFilter.size < allChannels.size);
 
   const SortIcon = ({ columnKey }: { columnKey: SortKey }) => {
     if (!isActiveSort(columnKey))
@@ -294,7 +365,8 @@ export function CustomersClient({
   };
 
   const sourceBadge = (source: string | null) => {
-    if (!source) return <span className="text-[13px] text-text-muted">&ndash;</span>;
+    if (!source)
+      return <span className="text-[13px] text-text-muted">&ndash;</span>;
     const info = SOURCE_LABELS[source] ?? {
       label: source,
       color: "bg-surface-muted text-text-secondary",
@@ -309,18 +381,6 @@ export function CustomersClient({
     );
   };
 
-  const activeFilters =
-    (riskFilter !== "all" ? 1 : 0) +
-    (tierFilter !== "all" ? 1 : 0) +
-    (repeatFilter !== "all" ? 1 : 0) +
-    (channelFilter !== "all" ? 1 : 0);
-
-  const insightLabel = insightFilter
-    ? insightFilter.type === "channel" && insightFilter.value
-      ? `Channel: ${insightFilter.value}`
-      : DRILLDOWN_LABELS[insightFilter.type] ?? insightFilter.type
-    : null;
-
   return (
     <div className="p-8 max-w-[1400px]">
       {/* Header */}
@@ -333,27 +393,9 @@ export function CustomersClient({
         </p>
       </div>
 
-      {/* Insight drilldown chip */}
-      {insightFilter && insightLabel && (
-        <div className="mb-4 flex items-center gap-2">
-          <div className="flex items-center gap-2 rounded-lg border border-border-default bg-surface-elevated px-3 py-1.5">
-            <Filter className="h-3.5 w-3.5 text-text-muted" />
-            <span className="text-[12px] font-medium text-text-primary">
-              {insightLabel}
-            </span>
-            <button
-              onClick={dismissInsightFilter}
-              className="flex items-center justify-center h-4 w-4 rounded-full hover:bg-surface-muted transition-colors"
-            >
-              <X className="h-3 w-3 text-text-muted" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="mb-4 flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
+      {/* Filter bar */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 max-w-sm min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
           <Input
             placeholder="Search by name or email..."
@@ -362,70 +404,59 @@ export function CustomersClient({
             className="pl-9 text-[13px] h-9 border-border-default bg-surface"
           />
         </div>
-        <Select value={riskFilter} onValueChange={(v) => setRiskFilter(v as RiskFilterValue)}>
-          <SelectTrigger className="w-[150px] text-[13px] h-9 border-border-default bg-surface">
-            <SelectValue placeholder="Risk Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Risk Status</SelectItem>
-            <SelectItem value="Healthy">Healthy</SelectItem>
-            <SelectItem value="At Risk">At Risk</SelectItem>
-            <SelectItem value="Dormant">Dormant</SelectItem>
-            <SelectItem value="Lost">Lost</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={tierFilter} onValueChange={(v) => setTierFilter(v as TierFilterValue)}>
-          <SelectTrigger className="w-[150px] text-[13px] h-9 border-border-default bg-surface">
-            <SelectValue placeholder="Revenue Tier" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Tiers</SelectItem>
-            <SelectItem value="Tier A">Tier A</SelectItem>
-            <SelectItem value="Tier B">Tier B</SelectItem>
-            <SelectItem value="Tier C">Tier C</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={repeatFilter} onValueChange={(v) => setRepeatFilter(v as RepeatFilterValue)}>
-          <SelectTrigger className="w-[150px] text-[13px] h-9 border-border-default bg-surface">
-            <SelectValue placeholder="Repeat" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Customers</SelectItem>
-            <SelectItem value="repeat">Repeat</SelectItem>
-            <SelectItem value="one_time">One-time</SelectItem>
-          </SelectContent>
-        </Select>
-        {availableChannels.length > 0 && (
-          <Select value={channelFilter} onValueChange={setChannelFilter}>
-            <SelectTrigger className="w-[150px] text-[13px] h-9 border-border-default bg-surface">
-              <SelectValue placeholder="Channel" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Channels</SelectItem>
-              {availableChannels.map((ch) => (
-                <SelectItem key={ch} value={ch}>
-                  {ch}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <FilterMultiSelect
+          label="Segment"
+          options={SEGMENT_OPTIONS}
+          selected={segmentFilter}
+          allValues={ALL_SEGMENTS}
+          onChange={setSegmentFilter}
+          width="w-[160px]"
+        />
+        <FilterMultiSelect
+          label="Risk"
+          options={RISK_OPTIONS}
+          selected={riskFilter}
+          allValues={ALL_RISKS}
+          onChange={setRiskFilter}
+        />
+        <FilterMultiSelect
+          label="Tier"
+          options={TIER_OPTIONS}
+          selected={tierFilter}
+          allValues={ALL_TIERS}
+          onChange={setTierFilter}
+        />
+        <FilterMultiSelect
+          label="Repeat"
+          options={REPEAT_OPTIONS}
+          selected={repeatFilter}
+          allValues={ALL_REPEATS}
+          onChange={setRepeatFilter}
+        />
+        {channelOptions.length > 0 && (
+          <FilterMultiSelect
+            label="Channel"
+            options={channelOptions}
+            selected={channelFilter}
+            allValues={allChannels}
+            onChange={setChannelFilter}
+          />
         )}
-        {activeFilters > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-9 text-[12px] text-text-muted"
-            onClick={() => {
-              setRiskFilter("all");
-              setTierFilter("all");
-              setRepeatFilter("all");
-              setChannelFilter("all");
-            }}
-          >
-            <X className="mr-1 h-3 w-3" />
-            Clear filters
-          </Button>
-        )}
+      </div>
+
+      {/* Clear filters row — always takes space, button fades in/out */}
+      <div className="mb-4 flex justify-end h-7">
+        <Button
+          variant="ghost"
+          size="sm"
+          className={`h-7 text-[12px] text-text-muted transition-opacity ${
+            hasActiveFilters ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+          onClick={clearAllFilters}
+        >
+          <X className="mr-1 h-3 w-3" />
+          Clear filters
+        </Button>
       </div>
 
       {/* Table */}

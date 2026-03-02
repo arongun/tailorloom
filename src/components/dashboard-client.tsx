@@ -120,19 +120,13 @@ export function DashboardClient({
   const handleInsightClick = (result: InsightResult) => {
     if (result.disabled) return;
     const params = new URLSearchParams();
-    params.set("insight", result.drilldownFilter.type);
-    if (result.drilldownFilter.value) {
-      params.set("value", result.drilldownFilter.value);
-    }
     if (config.profile_id) {
       params.set("profile", config.profile_id);
     }
-    // Prefill manual filter dropdowns to match the insight drilldown
-    if (result.drilldownFilter.type === "repeat_customers") {
-      params.set("repeat", "repeat");
-    }
+    // Pre-select just the matching segment in multi-select
+    params.append("segment", result.drilldownFilter.type);
     if (result.drilldownFilter.type === "channel" && result.drilldownFilter.value) {
-      params.set("channel", result.drilldownFilter.value);
+      params.append("channel", result.drilldownFilter.value);
     }
     router.push(`/customers?${params.toString()}`);
   };
