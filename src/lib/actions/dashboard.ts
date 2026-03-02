@@ -2,155 +2,38 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveConfig } from "@/lib/insights/config";
+import {
+  computeAllCustomerMetrics,
+  computeRevenueTier,
+  computeRiskStatus,
+  maxDate,
+} from "@/lib/insights/metrics";
+import { INSIGHT_CARDS } from "@/lib/insights/registry";
+import type {
+  ComputedCustomer,
+  ResolvedConfig,
+  InsightResult,
+} from "@/lib/insights/types";
 
 const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
 // ─── Types ─────────────────────────────────────────────────
+// Types are defined in @/lib/types/dashboard.ts and @/lib/insights/types.ts
+// to avoid "use server" export restrictions. Re-imported here for use in functions.
 
-export interface DateRangeParam {
-  from: string | null;
-  to: string | null;
-}
-
-export interface DashboardMetrics {
-  totalRevenue: number;
-  revenueChange: number;
-  activeCustomers: number;
-  atRiskCustomers: number;
-  highValueCustomers: number;
-  purchaseFrequency: number;
-}
-
-export type TrendInterval = "day" | "week" | "month";
-
-export interface RevenueTrendPoint {
-  label: string;
-  revenue: number;
-  purchases: number;
-}
-
-export interface RevenueTrendBySourcePoint {
-  label: string;
-  stripe: number;
-  pos: number;
-  wetravel: number;
-  calendly: number;
-  passline: number;
-  manual: number;
-}
-
-export interface RevenueTrendData {
-  total: RevenueTrendPoint[];
-  bySource: RevenueTrendBySourcePoint[];
-  interval: TrendInterval;
-}
-
-export interface RevenueBySourceItem {
-  source: string;
-  revenue: number;
-  percentage: number;
-}
-
-export interface TopCustomer {
-  id: string;
-  full_name: string | null;
-  email: string | null;
-  totalRevenue: number;
-  sources: string[];
-}
-
-export interface CustomerRow {
-  id: string;
-  full_name: string | null;
-  email: string | null;
-  phone: string | null;
-  country: string | null;
-  totalRevenue: number;
-  purchaseCount: number;
-  lastActivityDate: string | null;
-  status: "Active" | "At Risk" | "Churned";
-  segment: "High Value" | "Regular" | "Low Value";
-  sources: string[];
-}
-
-export interface CustomerDetail {
-  customer: CustomerRow;
-  transactions: {
-    id: string;
-    type: "payment" | "booking" | "attendance";
-    source: string;
-    description: string;
-    amount: number | null;
-    date: string;
-    status?: string;
-    // Payment extras
-    external_payment_id?: string;
-    payment_type?: string;
-    currency?: string;
-    // Booking extras
-    external_booking_id?: string;
-    event_type?: string;
-    start_time?: string;
-    end_time?: string;
-    start_date?: string;
-    end_date?: string;
-    // Attendance extras
-    external_attendance_id?: string;
-    event_name?: string;
-    ticket_type?: string;
-    // Attribution
-    utm_source?: string;
-    utm_medium?: string;
-    utm_campaign?: string;
-    utm_content?: string;
-    referrer?: string;
-    referral_partner?: string;
-    lead_source_channel?: string;
-    lead_capture_method?: string;
-    // Raw data
-    raw_data?: Record<string, unknown>;
-  }[];
-}
-
-export interface InsightConfigData {
-  churn_days: number;
-  high_value_threshold: number;
-}
+import type {
+  DateRangeParam,
+  TrendInterval,
+  RevenueTrendPoint,
+  RevenueTrendBySourcePoint,
+  RevenueTrendData,
+  RevenueBySourceItem,
+  TopCustomer,
+  CustomerDetail,
+} from "@/lib/types/dashboard";
 
 // ─── Helpers ───────────────────────────────────────────────
-
-function computeStatus(
-  daysSinceLastActivity: number | null,
-  churnDays: number
-): "Active" | "At Risk" | "Churned" {
-  if (daysSinceLastActivity === null) return "Churned";
-  if (daysSinceLastActivity > churnDays * 1.5) return "Churned";
-  if (daysSinceLastActivity > churnDays) return "At Risk";
-  return "Active";
-}
-
-function computeSegment(
-  totalRevenue: number,
-  highValueThreshold: number
-): "High Value" | "Regular" | "Low Value" {
-  if (totalRevenue >= highValueThreshold) return "High Value";
-  if (totalRevenue >= highValueThreshold * 0.3) return "Regular";
-  return "Low Value";
-}
-
-function daysBetween(dateStr: string, now: Date): number {
-  return Math.floor(
-    (now.getTime() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24)
-  );
-}
-
-function maxDate(...dates: (string | null | undefined)[]): string | null {
-  let max: string | null = null;
-  for (const d of dates) {
-    if (d && (!max || d > max)) max = d;
-  }
-  return max;
-}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyDateFilter(query: any, dateColumn: string, dateRange?: DateRangeParam) {
@@ -175,193 +58,42 @@ async function requireAuth() {
   return user;
 }
 
-// ─── 1. getInsightConfig ──────────────────────────────────
+// ─── New: Shared internal resolve + compute ────────────────
 
-export async function getInsightConfig(): Promise<InsightConfigData> {
-  await requireAuth();
-  const admin = createAdminClient();
-
-  const { data } = await admin
-    .from("insight_config")
-    .select("churn_days, high_value_threshold")
-    .eq("org_id", DEFAULT_ORG_ID)
-    .single();
-
-  return {
-    churn_days: data?.churn_days ?? 90,
-    high_value_threshold: data?.high_value_threshold ?? 500,
-  };
+async function _resolveAndCompute(profileParam?: string | null): Promise<{
+  customers: ComputedCustomer[];
+  config: ResolvedConfig;
+  insightResults: InsightResult[];
+}> {
+  const config = await resolveConfig(profileParam);
+  const customers = await computeAllCustomerMetrics(config);
+  const insightResults = INSIGHT_CARDS.map((card) =>
+    card.compute(customers, config)
+  );
+  return { customers, config, insightResults };
 }
 
-// ─── 2. updateInsightConfig ───────────────────────────────
+// ─── New: getComputedCustomersForTable ─────────────────────
 
-export async function updateInsightConfig(
-  churnDays: number,
-  highValueThreshold: number
-): Promise<InsightConfigData> {
+export async function getComputedCustomersForTable(
+  profileParam?: string | null
+): Promise<{ customers: ComputedCustomer[]; config: ResolvedConfig }> {
   await requireAuth();
-  const admin = createAdminClient();
-
-  const { data, error } = await admin
-    .from("insight_config")
-    .upsert(
-      {
-        org_id: DEFAULT_ORG_ID,
-        churn_days: churnDays,
-        high_value_threshold: highValueThreshold,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "org_id" }
-    )
-    .select("churn_days, high_value_threshold")
-    .single();
-
-  if (error) throw new Error(`Failed to update insight config: ${error.message}`);
-
-  return {
-    churn_days: data?.churn_days ?? churnDays,
-    high_value_threshold: data?.high_value_threshold ?? highValueThreshold,
-  };
+  const { customers, config } = await _resolveAndCompute(profileParam);
+  return { customers, config };
 }
 
-// ─── 3. getDashboardMetrics ───────────────────────────────
+// ─── New: getInsightCardResults ────────────────────────────
 
-export async function getDashboardMetrics(
-  churnDays: number,
-  highValueThreshold: number,
-  dateRange?: DateRangeParam
-): Promise<DashboardMetrics> {
+export async function getInsightCardResults(
+  profileParam?: string | null
+): Promise<{ config: ResolvedConfig; insightResults: InsightResult[] }> {
   await requireAuth();
-  const admin = createAdminClient();
-  const now = new Date();
-
-  let paymentsQuery = admin
-    .from("payments")
-    .select("customer_id, amount, payment_date")
-    .eq("org_id", DEFAULT_ORG_ID)
-    .in("status", ["succeeded", "approved"]);
-  paymentsQuery = applyDateFilter(paymentsQuery, "payment_date", dateRange);
-
-  let bookingsQuery = admin
-    .from("bookings")
-    .select("customer_id, start_time")
-    .eq("org_id", DEFAULT_ORG_ID);
-  bookingsQuery = applyDateFilter(bookingsQuery, "start_time", dateRange);
-
-  let attendanceQuery = admin
-    .from("attendance")
-    .select("customer_id, check_in_time")
-    .eq("org_id", DEFAULT_ORG_ID);
-  attendanceQuery = applyDateFilter(attendanceQuery, "check_in_time", dateRange);
-
-  const [customersRes, paymentsRes, bookingsRes, attendanceRes] =
-    await Promise.all([
-      admin.from("customers").select("id").eq("org_id", DEFAULT_ORG_ID),
-      paymentsQuery,
-      bookingsQuery,
-      attendanceQuery,
-    ]);
-
-  const customers = customersRes.data ?? [];
-  const payments = paymentsRes.data ?? [];
-  const bookings = bookingsRes.data ?? [];
-  const attendance = attendanceRes.data ?? [];
-
-  const customerPayments = new Map<string, { total: number; count: number; lastDate: string | null }>();
-  for (const p of payments) {
-    if (!p.customer_id) continue;
-    const existing = customerPayments.get(p.customer_id) ?? { total: 0, count: 0, lastDate: null };
-    existing.total += Number(p.amount) || 0;
-    existing.count += 1;
-    existing.lastDate = maxDate(existing.lastDate, p.payment_date);
-    customerPayments.set(p.customer_id, existing);
-  }
-
-  const customerLastBooking = new Map<string, string>();
-  for (const b of bookings) {
-    if (!b.customer_id) continue;
-    const existing = customerLastBooking.get(b.customer_id);
-    if (!existing || b.start_time > existing) customerLastBooking.set(b.customer_id, b.start_time);
-  }
-
-  const customerLastAttendance = new Map<string, string>();
-  for (const a of attendance) {
-    if (!a.customer_id) continue;
-    const existing = customerLastAttendance.get(a.customer_id);
-    if (!existing || a.check_in_time > existing) customerLastAttendance.set(a.customer_id, a.check_in_time);
-  }
-
-  let totalRevenue = 0;
-  let activeCount = 0;
-  let atRiskCount = 0;
-  let highValueCount = 0;
-  let totalPaymentCount = 0;
-
-  for (const c of customers) {
-    const payInfo = customerPayments.get(c.id);
-    const revenue = payInfo?.total ?? 0;
-    totalRevenue += revenue;
-    totalPaymentCount += payInfo?.count ?? 0;
-
-    const lastActivity = maxDate(payInfo?.lastDate, customerLastBooking.get(c.id), customerLastAttendance.get(c.id));
-    const daysSince = lastActivity ? daysBetween(lastActivity, now) : null;
-    const status = computeStatus(daysSince, churnDays);
-    const segment = computeSegment(revenue, highValueThreshold);
-
-    if (status === "Active") activeCount++;
-    if (status === "At Risk") atRiskCount++;
-    if (segment === "High Value") highValueCount++;
-  }
-
-  let revenueChange = 0;
-  if (dateRange?.from) {
-    const rangeFrom = new Date(dateRange.from);
-    const rangeTo = dateRange.to ? new Date(dateRange.to) : now;
-    const rangeDuration = rangeTo.getTime() - rangeFrom.getTime();
-    const priorFrom = new Date(rangeFrom.getTime() - rangeDuration);
-    const priorTo = new Date(rangeFrom.getTime());
-
-    const { data: priorPayments } = await admin
-      .from("payments")
-      .select("amount")
-      .eq("org_id", DEFAULT_ORG_ID)
-      .in("status", ["succeeded", "approved"])
-      .gte("payment_date", priorFrom.toISOString())
-      .lt("payment_date", priorTo.toISOString());
-
-    const priorRevenue = (priorPayments ?? []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-    revenueChange = priorRevenue > 0 ? ((totalRevenue - priorRevenue) / priorRevenue) * 100 : totalRevenue > 0 ? 100 : 0;
-  } else {
-    const sixMonthsAgo = new Date(now);
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    const twelveMonthsAgo = new Date(now);
-    twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
-
-    let recentRevenue = 0;
-    let priorRevenue = 0;
-    for (const p of payments) {
-      const d = new Date(p.payment_date);
-      const amount = Number(p.amount) || 0;
-      if (d >= sixMonthsAgo) recentRevenue += amount;
-      else if (d >= twelveMonthsAgo) priorRevenue += amount;
-    }
-    revenueChange = priorRevenue > 0 ? ((recentRevenue - priorRevenue) / priorRevenue) * 100 : recentRevenue > 0 ? 100 : 0;
-  }
-
-  const customersWithPayments = customerPayments.size;
-  const purchaseFrequency = customersWithPayments > 0 ? Math.round((totalPaymentCount / customersWithPayments) * 10) / 10 : 0;
-
-  return {
-    totalRevenue: Math.round(totalRevenue * 100) / 100,
-    revenueChange: Math.round(revenueChange * 10) / 10,
-    activeCustomers: activeCount,
-    atRiskCustomers: atRiskCount,
-    highValueCustomers: highValueCount,
-    purchaseFrequency,
-  };
+  const { config, insightResults } = await _resolveAndCompute(profileParam);
+  return { config, insightResults };
 }
 
-// ─── 4. getRevenueTrend ───────────────────────────────────
+// ─── getRevenueTrend (unchanged) ──────────────────────────
 
 /** Pick the best grouping interval based on how many days the range spans */
 function chooseInterval(spanDays: number): TrendInterval {
@@ -376,7 +108,6 @@ function toBucketKey(d: Date, interval: TrendInterval): string {
     return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
   if (interval === "week") {
-    // Week of — use Monday of the week
     const day = d.getDay();
     const monday = new Date(d);
     monday.setDate(d.getDate() - ((day + 6) % 7));
@@ -401,7 +132,6 @@ function generateBuckets(from: Date, to: Date, interval: TrendInterval): string[
       cursor.setDate(cursor.getDate() + 1);
     }
   } else if (interval === "week") {
-    // Start from Monday of the first week
     const day = cursor.getDay();
     cursor.setDate(cursor.getDate() - ((day + 6) % 7));
     cursor.setHours(0, 0, 0, 0);
@@ -444,7 +174,6 @@ export async function getRevenueTrend(
     stripe: 0, pos: 0, wetravel: 0, calendly: 0, passline: 0, manual: 0,
   });
 
-  // Determine date range and interval
   const now = new Date();
   let from: Date;
   let to: Date;
@@ -453,7 +182,6 @@ export async function getRevenueTrend(
     from = new Date(dateRange.from);
     to = dateRange.to ? new Date(dateRange.to) : now;
   } else {
-    // Default: last 12 months
     from = new Date(now);
     from.setMonth(from.getMonth() - 11);
     from.setDate(1);
@@ -463,7 +191,6 @@ export async function getRevenueTrend(
   const spanDays = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)));
   const interval = chooseInterval(spanDays);
 
-  // Pre-fill buckets
   const bucketKeys = generateBuckets(from, to, interval);
   const totalMap = new Map<string, { revenue: number; purchases: number }>();
   const sourceMap = new Map<string, Omit<RevenueTrendBySourcePoint, "label">>();
@@ -473,7 +200,6 @@ export async function getRevenueTrend(
     sourceMap.set(key, emptySource());
   }
 
-  // Aggregate payments into buckets
   for (const p of payments ?? []) {
     const d = new Date(p.payment_date);
     const key = toBucketKey(d, interval);
@@ -494,7 +220,6 @@ export async function getRevenueTrend(
     sourceMap.set(key, sourceEntry);
   }
 
-  // Build ordered arrays using the pre-filled bucket order
   const total: RevenueTrendPoint[] = bucketKeys.map((key) => {
     const d = totalMap.get(key)!;
     return { label: key, revenue: Math.round(d.revenue * 100) / 100, purchases: d.purchases };
@@ -516,7 +241,7 @@ export async function getRevenueTrend(
   return { total, bySource, interval };
 }
 
-// ─── 5. getRevenueBySource ────────────────────────────────
+// ─── getRevenueBySource (unchanged) ───────────────────────
 
 export async function getRevenueBySource(dateRange?: DateRangeParam): Promise<RevenueBySourceItem[]> {
   await requireAuth();
@@ -544,7 +269,7 @@ export async function getRevenueBySource(dateRange?: DateRangeParam): Promise<Re
     .sort((a, b) => b.revenue - a.revenue);
 }
 
-// ─── 6. getTopCustomers ───────────────────────────────────
+// ─── getTopCustomers (unchanged) ──────────────────────────
 
 export async function getTopCustomers(dateRange?: DateRangeParam, limit: number = 5): Promise<TopCustomer[]> {
   await requireAuth();
@@ -593,83 +318,7 @@ export async function getTopCustomers(dateRange?: DateRangeParam, limit: number 
   });
 }
 
-// ─── 7. getCustomersWithMetrics ───────────────────────────
-
-export async function getCustomersWithMetrics(churnDays: number, highValueThreshold: number): Promise<CustomerRow[]> {
-  await requireAuth();
-  const admin = createAdminClient();
-  const now = new Date();
-
-  const [customersRes, paymentsRes, bookingsRes, attendanceRes, sourcesRes] = await Promise.all([
-    admin.from("customers").select("id, full_name, email, phone, country").eq("org_id", DEFAULT_ORG_ID),
-    admin.from("payments").select("customer_id, amount, payment_date").eq("org_id", DEFAULT_ORG_ID).in("status", ["succeeded", "approved"]),
-    admin.from("bookings").select("customer_id, start_time").eq("org_id", DEFAULT_ORG_ID),
-    admin.from("attendance").select("customer_id, check_in_time").eq("org_id", DEFAULT_ORG_ID),
-    admin.from("customer_sources").select("customer_id, source"),
-  ]);
-
-  const customers = customersRes.data ?? [];
-  const payments = paymentsRes.data ?? [];
-  const bookings = bookingsRes.data ?? [];
-  const attendance = attendanceRes.data ?? [];
-  const sources = sourcesRes.data ?? [];
-
-  const paymentAgg = new Map<string, { total: number; count: number; lastDate: string | null }>();
-  for (const p of payments) {
-    if (!p.customer_id) continue;
-    const agg = paymentAgg.get(p.customer_id) ?? { total: 0, count: 0, lastDate: null };
-    agg.total += Number(p.amount) || 0;
-    agg.count += 1;
-    agg.lastDate = maxDate(agg.lastDate, p.payment_date);
-    paymentAgg.set(p.customer_id, agg);
-  }
-
-  const lastBooking = new Map<string, string>();
-  for (const b of bookings) {
-    if (!b.customer_id) continue;
-    const existing = lastBooking.get(b.customer_id);
-    if (!existing || b.start_time > existing) lastBooking.set(b.customer_id, b.start_time);
-  }
-
-  const lastAttendance = new Map<string, string>();
-  for (const a of attendance) {
-    if (!a.customer_id) continue;
-    const existing = lastAttendance.get(a.customer_id);
-    if (!existing || a.check_in_time > existing) lastAttendance.set(a.customer_id, a.check_in_time);
-  }
-
-  const sourceMap = new Map<string, Set<string>>();
-  for (const s of sources) {
-    if (!s.customer_id) continue;
-    const set = sourceMap.get(s.customer_id) ?? new Set();
-    set.add(s.source);
-    sourceMap.set(s.customer_id, set);
-  }
-
-  return customers.map((c) => {
-    const payInfo = paymentAgg.get(c.id);
-    const revenue = payInfo?.total ?? 0;
-    const purchaseCount = payInfo?.count ?? 0;
-    const lastActivity = maxDate(payInfo?.lastDate, lastBooking.get(c.id), lastAttendance.get(c.id));
-    const daysSince = lastActivity ? daysBetween(lastActivity, now) : null;
-
-    return {
-      id: c.id,
-      full_name: c.full_name,
-      email: c.email,
-      phone: c.phone,
-      country: c.country,
-      totalRevenue: Math.round(revenue * 100) / 100,
-      purchaseCount,
-      lastActivityDate: lastActivity,
-      status: computeStatus(daysSince, churnDays),
-      segment: computeSegment(revenue, highValueThreshold),
-      sources: Array.from(sourceMap.get(c.id) ?? []),
-    };
-  });
-}
-
-// ─── 8. searchCustomers ───────────────────────────────────
+// ─── searchCustomers (unchanged) ──────────────────────────
 
 export async function searchCustomers(
   query: string
@@ -690,23 +339,21 @@ export async function searchCustomers(
   return data ?? [];
 }
 
-// ─── 9. getCustomerDetail ─────────────────────────────────
+// ─── getCustomerDetail (updated: org_id guards on all queries) ─
 
 export async function getCustomerDetail(customerId: string): Promise<CustomerDetail | null> {
   await requireAuth();
   const admin = createAdminClient();
   const now = new Date();
 
-  const configRes = await admin.from("insight_config").select("churn_days, high_value_threshold").eq("org_id", DEFAULT_ORG_ID).single();
-  const churnDays = configRes.data?.churn_days ?? 90;
-  const highValueThreshold = configRes.data?.high_value_threshold ?? 500;
+  const config = await resolveConfig();
 
   const [customerRes, paymentsRes, bookingsRes, attendanceRes, sourcesRes] = await Promise.all([
-    admin.from("customers").select("id, full_name, email, phone, country").eq("id", customerId).single(),
-    admin.from("payments").select("id, source, amount, payment_date, payment_type, status, external_payment_id, currency, raw_data").eq("customer_id", customerId).order("payment_date", { ascending: false }),
-    admin.from("bookings").select("id, source, event_type, start_time, end_time, start_date, end_date, status, external_booking_id, utm_source, utm_medium, utm_campaign, utm_content, referrer, referral_partner, lead_source_channel, lead_capture_method, raw_data").eq("customer_id", customerId).order("start_time", { ascending: false }),
-    admin.from("attendance").select("id, source, event_name, check_in_time, ticket_type, external_attendance_id, raw_data").eq("customer_id", customerId).order("check_in_time", { ascending: false }),
-    admin.from("customer_sources").select("source").eq("customer_id", customerId),
+    admin.from("customers").select("id, full_name, email, phone, country").eq("id", customerId).eq("org_id", DEFAULT_ORG_ID).single(),
+    admin.from("payments").select("id, source, amount, payment_date, payment_type, status, external_payment_id, currency, raw_data").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID).order("payment_date", { ascending: false }),
+    admin.from("bookings").select("id, source, event_type, start_time, end_time, start_date, end_date, status, external_booking_id, utm_source, utm_medium, utm_campaign, utm_content, referrer, referral_partner, lead_source_channel, lead_capture_method, raw_data").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID).order("start_time", { ascending: false }),
+    admin.from("attendance").select("id, source, event_name, check_in_time, ticket_type, external_attendance_id, raw_data").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID).order("check_in_time", { ascending: false }),
+    admin.from("customer_sources").select("source").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID),
   ]);
 
   if (!customerRes.data) return null;
@@ -725,12 +372,22 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
   const lastBookingDate = bookings.length > 0 ? bookings[0].start_time : null;
   const lastAttendanceDate = attendanceList.length > 0 ? attendanceList[0].check_in_time : null;
   const lastActivity = maxDate(lastPaymentDate, lastBookingDate, lastAttendanceDate);
-  const daysSince = lastActivity ? daysBetween(lastActivity, now) : null;
+  const daysSince = lastActivity
+    ? Math.floor((now.getTime() - new Date(lastActivity).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
 
-  const customerRow: CustomerRow = {
-    id: c.id, full_name: c.full_name, email: c.email, phone: c.phone, country: c.country,
-    totalRevenue: Math.round(totalRevenue * 100) / 100, purchaseCount, lastActivityDate: lastActivity,
-    status: computeStatus(daysSince, churnDays), segment: computeSegment(totalRevenue, highValueThreshold), sources,
+  const customer = {
+    id: c.id,
+    full_name: c.full_name,
+    email: c.email,
+    phone: c.phone,
+    country: c.country,
+    totalRevenue: Math.round(totalRevenue * 100) / 100,
+    purchaseCount,
+    lastActivityDate: lastActivity,
+    revenue_tier: computeRevenueTier(Math.round(totalRevenue * 100) / 100, config),
+    risk_status: computeRiskStatus(daysSince, config),
+    sources,
   };
 
   const transactions: CustomerDetail["transactions"] = [];
@@ -779,5 +436,5 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
   }
   transactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  return { customer: customerRow, transactions };
+  return { customer, transactions };
 }

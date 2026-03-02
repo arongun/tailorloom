@@ -108,17 +108,7 @@ export function Sidebar() {
         <div className="mx-4 h-px bg-border-muted" />
 
         {/* Navigation */}
-        <nav className="flex flex-1 flex-col gap-1 px-3 pt-4">
-          <div
-            className={cn(
-              "mb-2 h-4 px-3 overflow-hidden transition-opacity duration-200",
-              collapsed ? "opacity-0" : "opacity-100"
-            )}
-          >
-            <p className="text-[10px] font-semibold tracking-widest text-text-muted uppercase whitespace-nowrap">
-              Navigation
-            </p>
-          </div>
+        <nav className="flex flex-1 flex-col gap-1 px-3 pt-2">
           {navItems.map((item) => {
             const isActive =
               item.href === "/"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   AreaChart,
   Area,
@@ -8,10 +8,9 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
 } from "recharts";
 import { useTheme } from "next-themes";
-import type { RevenueTrendBySourcePoint } from "@/lib/actions/dashboard";
+import type { RevenueTrendBySourcePoint } from "@/lib/types/dashboard";
 
 interface RevenueChartProps {
   data: { label: string; revenue: number; purchases: number }[];
@@ -93,9 +92,34 @@ function formatYAxis(value: number): string {
   return `$${value}`;
 }
 
+/** Tracks element dimensions via ResizeObserver with no debounce, so the
+ *  chart redraws on every animation frame during the sidebar CSS transition. */
+function useContainerSize() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  const update = useCallback(() => {
+    if (ref.current) {
+      setSize({ width: ref.current.clientWidth, height: ref.current.clientHeight });
+    }
+  }, []);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [update]);
+
+  return { ref, ...size };
+}
+
 export function RevenueChart({ data, mode = "total", bySourceData }: RevenueChartProps) {
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
+  const { ref: containerRef, width: cw, height: ch } = useContainerSize();
 
   // Enable animation only after first render so mount is instant,
   // but subsequent data changes get smooth transitions
@@ -117,14 +141,14 @@ export function RevenueChart({ data, mode = "total", bySourceData }: RevenueChar
 
   if (mode === "bySource" && bySourceData) {
     return (
-      <div className="h-[320px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={bySourceData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <div ref={containerRef} className="h-[320px] w-full">
+        {cw > 0 && ch > 0 && (
+          <AreaChart width={cw} height={ch} data={bySourceData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <defs>
               {SOURCES.map((source) => (
                 <linearGradient key={source} id={`gradient-${source}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={SOURCE_COLORS[source]} stopOpacity={0.2} />
-                  <stop offset="100%" stopColor={SOURCE_COLORS[source]} stopOpacity={0} />
+                  <stop offset="0%" stopColor={SOURCE_COLORS[source]} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={SOURCE_COLORS[source]} stopOpacity={0.05} />
                 </linearGradient>
               ))}
             </defs>
@@ -137,7 +161,6 @@ export function RevenueChart({ data, mode = "total", bySourceData }: RevenueChar
                 key={source}
                 type="monotone"
                 dataKey={source}
-                stackId="1"
                 stroke={SOURCE_COLORS[source]}
                 strokeWidth={1.5}
                 fill={`url(#gradient-${source})`}
@@ -148,15 +171,15 @@ export function RevenueChart({ data, mode = "total", bySourceData }: RevenueChar
               />
             ))}
           </AreaChart>
-        </ResponsiveContainer>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="h-[320px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+    <div ref={containerRef} className="h-[320px] w-full">
+      {cw > 0 && ch > 0 && (
+        <AreaChart width={cw} height={ch} data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
           <defs>
             <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={strokeColor} stopOpacity={0.08} />
@@ -180,7 +203,7 @@ export function RevenueChart({ data, mode = "total", bySourceData }: RevenueChar
             animationEasing="ease-in-out"
           />
         </AreaChart>
-      </ResponsiveContainer>
+      )}
     </div>
   );
 }

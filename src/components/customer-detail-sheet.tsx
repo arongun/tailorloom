@@ -9,6 +9,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { riskBadge, tierBadge } from "@/components/badge-helpers";
 import {
   Sheet,
   SheetContent,
@@ -18,7 +19,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { getCustomerDetail } from "@/lib/actions/dashboard";
-import type { CustomerDetail } from "@/lib/actions/dashboard";
+import type { CustomerDetail } from "@/lib/types/dashboard";
 
 type TransactionDetail = CustomerDetail["transactions"][number];
 
@@ -236,22 +237,6 @@ export function CustomerDetailSheet({
     }
   }, [open, customerId]);
 
-  const statusBadge = (status: string) => {
-    const styles: Record<string, string> = {
-      Active: "bg-emerald-50 text-emerald-700 hover:bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400 dark:hover:bg-emerald-500/10",
-      "At Risk": "bg-amber-50 text-amber-700 hover:bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/10",
-      Churned: "bg-rose-50 text-rose-700 hover:bg-rose-50 dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500/10",
-    };
-    return (
-      <Badge
-        variant="secondary"
-        className={`text-[11px] font-medium ${styles[status]}`}
-      >
-        {status}
-      </Badge>
-    );
-  };
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-[480px] sm:w-[540px] overflow-y-auto">
@@ -295,11 +280,11 @@ export function CustomerDetailSheet({
               )}
             </SheetHeader>
 
-            <div className="grid grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-2 gap-3 mb-6">
               <Card className="border-border-default shadow-none">
                 <CardContent className="p-3">
                   <p className="text-[10px] font-medium tracking-wide text-text-muted uppercase mb-1">
-                    Revenue
+                    Lifetime Revenue
                   </p>
                   <p className="text-[16px] font-semibold text-text-primary tabular-nums">
                     ${detail.customer.totalRevenue.toLocaleString()}
@@ -319,10 +304,20 @@ export function CustomerDetailSheet({
               <Card className="border-border-default shadow-none">
                 <CardContent className="p-3">
                   <p className="text-[10px] font-medium tracking-wide text-text-muted uppercase mb-1">
-                    Status
+                    Revenue Tier
                   </p>
                   <div className="mt-0.5">
-                    {statusBadge(detail.customer.status)}
+                    {tierBadge(detail.customer.revenue_tier)}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="border-border-default shadow-none">
+                <CardContent className="p-3">
+                  <p className="text-[10px] font-medium tracking-wide text-text-muted uppercase mb-1">
+                    Risk Status
+                  </p>
+                  <div className="mt-0.5">
+                    {riskBadge(detail.customer.risk_status)}
                   </div>
                 </CardContent>
               </Card>

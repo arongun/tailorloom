@@ -122,6 +122,11 @@ export interface InsightConfig {
   org_id: string;
   churn_days: number;
   high_value_threshold: number;
+  at_risk_days: number | null;
+  dormant_days: number | null;
+  lost_days: number | null;
+  repeat_purchase_min: number | null;
+  active_profile: string | null;
   created_at: string;
   updated_at: string;
 }

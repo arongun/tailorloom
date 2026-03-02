@@ -10,14 +10,14 @@ export default function DashboardLoading() {
         <div className="h-8 w-80 bg-surface-muted rounded-md" />
       </div>
 
-      {/* Hero row */}
+      {/* Hero + 2x2 metrics */}
       <div className="flex gap-4 mb-6">
-        <div className="flex-[3] h-[160px] bg-surface-muted rounded-xl" />
+        <div className="flex-[3] h-[180px] bg-surface-muted rounded-xl" />
         <div className="flex-[2] grid grid-cols-2 gap-4">
-          <div className="h-[70px] bg-surface-muted rounded-xl" />
-          <div className="h-[70px] bg-surface-muted rounded-xl" />
-          <div className="h-[70px] bg-surface-muted rounded-xl" />
-          <div className="h-[70px] bg-surface-muted rounded-xl" />
+          <div className="h-[82px] bg-surface-muted rounded-xl" />
+          <div className="h-[82px] bg-surface-muted rounded-xl" />
+          <div className="h-[82px] bg-surface-muted rounded-xl" />
+          <div className="h-[82px] bg-surface-muted rounded-xl" />
         </div>
       </div>
 
@@ -25,13 +25,10 @@ export default function DashboardLoading() {
       <div className="h-[400px] bg-surface-muted rounded-xl mb-6" />
 
       {/* Two columns */}
-      <div className="flex gap-4 mb-6">
+      <div className="flex gap-4">
         <div className="flex-[3] h-[280px] bg-surface-muted rounded-xl" />
         <div className="flex-[2] h-[280px] bg-surface-muted rounded-xl" />
       </div>
-
-      {/* Compact strip */}
-      <div className="h-[56px] bg-surface-muted rounded-xl" />
     </div>
   );
 }
