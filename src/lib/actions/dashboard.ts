@@ -154,7 +154,8 @@ function generateBuckets(from: Date, to: Date, interval: TrendInterval): string[
 }
 
 export async function getRevenueTrend(
-  dateRange?: DateRangeParam
+  dateRange?: DateRangeParam,
+  intervalOverride?: "week" | "month"
 ): Promise<RevenueTrendData> {
   await requireAuth();
   const admin = createAdminClient();
@@ -189,7 +190,7 @@ export async function getRevenueTrend(
   }
 
   const spanDays = Math.max(1, Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)));
-  const interval = chooseInterval(spanDays);
+  const interval = intervalOverride ?? chooseInterval(spanDays);
 
   const bucketKeys = generateBuckets(from, to, interval);
   const totalMap = new Map<string, { revenue: number; purchases: number }>();
@@ -341,19 +342,19 @@ export async function searchCustomers(
 
 // ─── getCustomerDetail (updated: org_id guards on all queries) ─
 
-export async function getCustomerDetail(customerId: string): Promise<CustomerDetail | null> {
+export async function getCustomerDetail(customerId: string, profileParam?: string): Promise<CustomerDetail | null> {
   await requireAuth();
   const admin = createAdminClient();
   const now = new Date();
 
-  const config = await resolveConfig();
+  const config = await resolveConfig(profileParam);
 
   const [customerRes, paymentsRes, bookingsRes, attendanceRes, sourcesRes] = await Promise.all([
     admin.from("customers").select("id, full_name, email, phone, country").eq("id", customerId).eq("org_id", DEFAULT_ORG_ID).single(),
     admin.from("payments").select("id, source, amount, payment_date, payment_type, status, external_payment_id, currency, raw_data").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID).order("payment_date", { ascending: false }),
     admin.from("bookings").select("id, source, event_type, start_time, end_time, start_date, end_date, status, external_booking_id, utm_source, utm_medium, utm_campaign, utm_content, referrer, referral_partner, lead_source_channel, lead_capture_method, raw_data").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID).order("start_time", { ascending: false }),
     admin.from("attendance").select("id, source, event_name, check_in_time, ticket_type, external_attendance_id, raw_data").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID).order("check_in_time", { ascending: false }),
-    admin.from("customer_sources").select("source").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID),
+    admin.from("customer_sources").select("source, external_id, external_email, external_name").eq("customer_id", customerId),
   ]);
 
   if (!customerRes.data) return null;
@@ -362,11 +363,40 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
   const payments = paymentsRes.data ?? [];
   const bookings = bookingsRes.data ?? [];
   const attendanceList = attendanceRes.data ?? [];
-  const sources = (sourcesRes.data ?? []).map((s: { source: string }) => s.source);
+  const rawSources = sourcesRes.data ?? [];
+  const sources = rawSources.map((s: { source: string }) => s.source);
+
+  // Build sourceLinks (dedupe by source + external_id)
+  const linksSeen = new Set<string>();
+  const sourceLinks: { source: string; external_id: string; external_email: string | null; external_name: string | null }[] = [];
+  for (const s of rawSources) {
+    const key = `${s.source}::${s.external_id}`;
+    if (!linksSeen.has(key)) {
+      linksSeen.add(key);
+      sourceLinks.push({
+        source: s.source,
+        external_id: s.external_id,
+        external_email: s.external_email ?? null,
+        external_name: s.external_name ?? null,
+      });
+    }
+  }
 
   const validPayments = payments.filter((p: { status: string }) => p.status === "succeeded" || p.status === "approved");
   const totalRevenue = validPayments.reduce((sum: number, p: { amount: number }) => sum + (Number(p.amount) || 0), 0);
   const purchaseCount = validPayments.length;
+
+  // Compute revenue by source from valid payments only
+  const revBySourceMap = new Map<string, number>();
+  for (const p of validPayments) {
+    const src = (p as { source: string }).source || "manual";
+    const amt = Number((p as { amount: number }).amount) || 0;
+    revBySourceMap.set(src, (revBySourceMap.get(src) ?? 0) + amt);
+  }
+  const revenueBySource: Record<string, number> = {};
+  for (const [src, amt] of revBySourceMap) {
+    revenueBySource[src] = Math.round(amt * 100) / 100;
+  }
 
   const lastPaymentDate = payments.length > 0 ? payments[0].payment_date : null;
   const lastBookingDate = bookings.length > 0 ? bookings[0].start_time : null;
@@ -388,6 +418,8 @@ export async function getCustomerDetail(customerId: string): Promise<CustomerDet
     revenue_tier: computeRevenueTier(Math.round(totalRevenue * 100) / 100, config),
     risk_status: computeRiskStatus(daysSince, config),
     sources,
+    sourceLinks,
+    revenueBySource,
   };
 
   const transactions: CustomerDetail["transactions"] = [];

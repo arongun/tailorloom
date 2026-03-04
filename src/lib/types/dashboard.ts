@@ -56,6 +56,13 @@ export interface CustomerDetail {
     revenue_tier: "Tier A" | "Tier B" | "Tier C";
     risk_status: "Healthy" | "At Risk" | "Dormant" | "Lost";
     sources: string[];
+    sourceLinks: {
+      source: string;
+      external_id: string;
+      external_email: string | null;
+      external_name: string | null;
+    }[];
+    revenueBySource: Record<string, number>;
   };
   transactions: {
     id: string;

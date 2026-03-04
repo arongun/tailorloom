@@ -21,13 +21,18 @@ import {
 } from "@/components/ui/table";
 import { Card } from "@/components/ui/card";
 import { CustomerDetailSheet } from "@/components/customer-detail-sheet";
+import { CustomerDetailPanel } from "@/components/customer-detail-panel";
 import { FilterMultiSelect } from "@/components/filter-multi-select";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { riskBadge, tierBadge } from "@/components/badge-helpers";
 import type { ComputedCustomer, ResolvedConfig } from "@/lib/insights/types";
 import {
   isRevenueAtRisk,
   isRepeatCustomer,
   isInChannel,
+  isWinBackTarget,
+  isOneAndDoneRisk,
+  isNewHighValue,
 } from "@/lib/insights/metrics";
 
 // ── Constants ───────────────────────────────────────────────
@@ -38,6 +43,7 @@ type SortKey =
   | "revenue_tier"
   | "risk_status"
   | "last_activity_date"
+  | "days_since_last_activity"
   | "primary_source";
 type SortDir = "asc" | "desc";
 
@@ -87,9 +93,12 @@ const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
 // ── Filter option definitions ───────────────────────────────
 
 const SEGMENT_OPTIONS = [
-  { value: "revenue_at_risk", label: "Revenue at Risk" },
-  { value: "repeat_customers", label: "Repeat Customers" },
+  { value: "win_back", label: "Win-Back Targets" },
+  { value: "one_and_done", label: "One-and-Done Risk" },
+  { value: "new_high_value", label: "New High-Value" },
   { value: "channel", label: "Channel" },
+  { value: "revenue_at_risk", label: "Revenue at Risk (Legacy)" },
+  { value: "repeat_customers", label: "Repeat Customers (Legacy)" },
 ];
 const ALL_SEGMENTS = new Set(SEGMENT_OPTIONS.map((o) => o.value));
 
@@ -157,6 +166,11 @@ export function CustomersClient({
     };
   }, [customers]);
 
+  // ── Responsive ────────────────────────────────────────
+  const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // ── State ───────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [segmentFilter, setSegmentFilter] = useState(() =>
@@ -206,6 +220,12 @@ export function CustomersClient({
         if (segmentFilter.has("revenue_at_risk") && isRevenueAtRisk(c, config))
           return true;
         if (segmentFilter.has("repeat_customers") && isRepeatCustomer(c))
+          return true;
+        if (segmentFilter.has("win_back") && isWinBackTarget(c, config))
+          return true;
+        if (segmentFilter.has("one_and_done") && isOneAndDoneRisk(c, config))
+          return true;
+        if (segmentFilter.has("new_high_value") && isNewHighValue(c, config))
           return true;
         if (segmentFilter.has("channel")) {
           // Channel segment: customer passes if they're in ANY of the selected channels
@@ -288,6 +308,11 @@ export function CustomersClient({
             new Date(a.last_activity_date ?? 0).getTime() -
             new Date(b.last_activity_date ?? 0).getTime();
           break;
+        case "days_since_last_activity":
+          cmp =
+            (a.days_since_last_activity ?? -1) -
+            (b.days_since_last_activity ?? -1);
+          break;
         case "primary_source":
           cmp = (a.primary_source ?? "").localeCompare(
             b.primary_source ?? ""
@@ -332,8 +357,12 @@ export function CustomersClient({
   };
 
   const handleRowClick = (customerId: string) => {
-    setSheetCustomerId(customerId);
-    setSheetOpen(true);
+    if (sheetOpen && sheetCustomerId === customerId) {
+      setSheetOpen(false);
+    } else {
+      setSheetCustomerId(customerId);
+      setSheetOpen(true);
+    }
   };
 
   const clearAllFilters = useCallback(() => {
@@ -410,7 +439,7 @@ export function CustomersClient({
           selected={segmentFilter}
           allValues={ALL_SEGMENTS}
           onChange={setSegmentFilter}
-          width="w-[160px]"
+          width="w-[180px]"
         />
         <FilterMultiSelect
           label="Risk"
@@ -465,7 +494,7 @@ export function CustomersClient({
           <TableHeader>
             <TableRow className="hover:bg-transparent border-border-default">
               <TableHead
-                className={`text-[11px] font-medium tracking-wide uppercase cursor-pointer select-none ${isActiveSort("full_name") ? "text-text-primary" : "text-text-muted"}`}
+                className={`pl-4 text-[11px] font-medium tracking-wide uppercase cursor-pointer select-none ${isActiveSort("full_name") ? "text-text-primary" : "text-text-muted"}`}
                 onClick={() => handleSort("full_name")}
               >
                 <span className="flex items-center">
@@ -505,6 +534,14 @@ export function CustomersClient({
                 </span>
               </TableHead>
               <TableHead
+                className={`text-[11px] font-medium tracking-wide uppercase cursor-pointer select-none text-right ${isActiveSort("days_since_last_activity") ? "text-text-primary" : "text-text-muted"}`}
+                onClick={() => handleSort("days_since_last_activity")}
+              >
+                <span className="flex items-center justify-end">
+                  Days Inactive <SortIcon columnKey="days_since_last_activity" />
+                </span>
+              </TableHead>
+              <TableHead
                 className={`text-[11px] font-medium tracking-wide uppercase cursor-pointer select-none ${isActiveSort("primary_source") ? "text-text-primary" : "text-text-muted"}`}
                 onClick={() => handleSort("primary_source")}
               >
@@ -518,18 +555,18 @@ export function CustomersClient({
             {filtered.map((customer) => (
               <TableRow
                 key={customer.id}
-                className="cursor-pointer border-border-muted hover:bg-surface-elevated/50 transition-colors"
+                className={`cursor-pointer border-border-muted hover:bg-surface-elevated/50 transition-colors ${
+                  sheetOpen && sheetCustomerId === customer.id ? "bg-surface-elevated/70" : ""
+                }`}
                 onClick={() => handleRowClick(customer.id)}
               >
-                <TableCell>
+                <TableCell className="pl-4">
                   <p className="text-[13px] font-medium text-text-primary">
-                    {customer.full_name || "Unknown"}
+                    {customer.full_name || customer.email || "Unknown"}
                   </p>
-                  {customer.email && (
-                    <p className="text-[11px] text-text-muted truncate max-w-[200px]">
-                      {customer.email}
-                    </p>
-                  )}
+                  <p className="text-[11px] text-text-muted truncate max-w-[200px] h-[16px]">
+                    {customer.email && customer.full_name ? customer.email : "\u00A0"}
+                  </p>
                 </TableCell>
                 <TableCell className="text-right text-[13px] font-medium text-text-primary tabular-nums">
                   $
@@ -550,13 +587,18 @@ export function CustomersClient({
                       })
                     : "\u2013"}
                 </TableCell>
+                <TableCell className="text-right text-[13px] text-text-secondary tabular-nums">
+                  {customer.days_since_last_activity !== null
+                    ? `${customer.days_since_last_activity}d`
+                    : "\u2013"}
+                </TableCell>
                 <TableCell>{sourceBadge(customer.primary_source)}</TableCell>
               </TableRow>
             ))}
             {filtered.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={6}
+                  colSpan={7}
                   className="h-24 text-center text-[13px] text-text-muted"
                 >
                   No customers match your filters.
@@ -567,12 +609,23 @@ export function CustomersClient({
         </Table>
       </Card>
 
-      {/* Customer Detail Sheet */}
-      <CustomerDetailSheet
-        open={sheetOpen}
-        onOpenChange={setSheetOpen}
-        customerId={sheetCustomerId}
-      />
+      {/* Customer Detail — desktop: non-modal panel, mobile: modal sheet */}
+      {mounted && isDesktop && (
+        <CustomerDetailPanel
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          customerId={sheetCustomerId}
+          profileParam={config.profile_id}
+        />
+      )}
+      {mounted && !isDesktop && (
+        <CustomerDetailSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          customerId={sheetCustomerId}
+          profileParam={config.profile_id}
+        />
+      )}
     </div>
   );
 }

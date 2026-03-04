@@ -22,6 +22,10 @@ export interface ComputedCustomer {
   primary_source: string | null; // Source with highest payment revenue; tie = alphabetical; null = no payments
   // For Channel Revenue card — Record (not Map) for serialization
   channel_revenue: Record<string, number>; // channel name -> revenue attributed via bookings
+  // Phase 2 additions
+  first_payment_date: string | null;
+  days_since_first_payment: number | null;
+  revenue_by_source: Record<string, number>;
 }
 
 // Profile config — 4 required fields + Phase 1 extensions
@@ -39,13 +43,16 @@ export interface ProfileConfig {
   tier_b_min: number;
   // Derived-only field (NOT persisted in DB)
   revenue_at_risk_min_ltv: number;
+  // Phase 2 extensions
+  new_high_value_window_days: number;
+  one_and_done_days: number;
 }
 
 // Resolved config after merging profile + DB overrides
 export type ResolvedConfig = ProfileConfig & { profile_id: string };
 
 // Insight card types
-export type InsightCategory = "Retention" | "Growth" | "Ops";
+export type InsightCategory = "Retention" | "Growth" | "Ops" | "Action";
 export type MetricType = "currency" | "percent" | "count";
 
 export interface DrilldownFilter {
@@ -64,6 +71,7 @@ export interface InsightResult {
   delta: number | null;
   drilldownFilter: DrilldownFilter;
   disabled?: boolean;
+  row?: 1 | 2 | 3;
 }
 
 export interface InsightCardDefinition {

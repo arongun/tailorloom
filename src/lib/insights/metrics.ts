@@ -32,6 +32,39 @@ export function isInChannel(
   return channel in customer.channel_revenue;
 }
 
+export function isWinBackTarget(
+  customer: ComputedCustomer,
+  config: ResolvedConfig
+): boolean {
+  return (
+    customer.revenue_tier === "Tier A" &&
+    customer.days_since_last_activity !== null &&
+    customer.days_since_last_activity >= config.at_risk_days
+  );
+}
+
+export function isOneAndDoneRisk(
+  customer: ComputedCustomer,
+  config: ResolvedConfig
+): boolean {
+  return (
+    customer.purchase_count === 1 &&
+    customer.days_since_last_activity !== null &&
+    customer.days_since_last_activity >= config.one_and_done_days
+  );
+}
+
+export function isNewHighValue(
+  customer: ComputedCustomer,
+  config: ResolvedConfig
+): boolean {
+  return (
+    customer.revenue_tier === "Tier A" &&
+    customer.days_since_first_payment !== null &&
+    customer.days_since_first_payment <= config.new_high_value_window_days
+  );
+}
+
 // ── Classification helpers ───────────────────────────────────────
 
 export function computeRevenueTier(
@@ -62,6 +95,14 @@ export function maxDate(...dates: (string | null | undefined)[]): string | null 
     if (d && (!max || d > max)) max = d;
   }
   return max;
+}
+
+export function minDate(...dates: (string | null | undefined)[]): string | null {
+  let min: string | null = null;
+  for (const d of dates) {
+    if (d && (!min || d < min)) min = d;
+  }
+  return min;
 }
 
 // ── Main computation ─────────────────────────────────────────────
@@ -108,6 +149,7 @@ export async function computeAllCustomerMetrics(
       total: number;
       count: number;
       lastDate: string | null;
+      firstDate: string | null;
       bySource: Map<string, number>;
     }
   >();
@@ -117,12 +159,14 @@ export async function computeAllCustomerMetrics(
       total: 0,
       count: 0,
       lastDate: null,
+      firstDate: null,
       bySource: new Map(),
     };
     const amount = Number(p.amount) || 0;
     agg.total += amount;
     agg.count += 1;
     agg.lastDate = maxDate(agg.lastDate, p.payment_date);
+    agg.firstDate = minDate(agg.firstDate, p.payment_date);
     const source = p.source || "manual";
     agg.bySource.set(source, (agg.bySource.get(source) ?? 0) + amount);
     paymentAgg.set(p.customer_id, agg);
@@ -210,6 +254,24 @@ export async function computeAllCustomerMetrics(
       }
     }
 
+    // Phase 2: first payment date + days since
+    const first_payment_date = payInfo?.firstDate ?? null;
+    const days_since_first_payment =
+      first_payment_date !== null
+        ? Math.floor(
+            (now.getTime() - new Date(first_payment_date).getTime()) /
+              (1000 * 60 * 60 * 24)
+          )
+        : null;
+
+    // Phase 2: revenue by source
+    const revenue_by_source: Record<string, number> = {};
+    if (payInfo) {
+      for (const [src, amt] of payInfo.bySource) {
+        revenue_by_source[src] = Math.round(amt * 100) / 100;
+      }
+    }
+
     return {
       id: c.id,
       full_name: c.full_name,
@@ -224,6 +286,9 @@ export async function computeAllCustomerMetrics(
       repeat_flag,
       primary_source,
       channel_revenue,
+      first_payment_date,
+      days_since_first_payment,
+      revenue_by_source,
     };
   });
 }

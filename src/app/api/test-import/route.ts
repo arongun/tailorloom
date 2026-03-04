@@ -80,7 +80,11 @@ export async function GET() {
         if (mapped.status) {
           mapped.status = normalizeStatus(mapped.status, source);
         }
-        const rowErrors = validateMappedRow(mapped, schema, i + 1);
+        const { errors: rowErrors, warnings: rowWarnings } = validateMappedRow(mapped, schema, i + 1);
+
+        if (rowWarnings.length > 0) {
+          errors.push(...rowWarnings.map((w) => ({ ...w, severity: "warning" as const })));
+        }
 
         if (rowErrors.length > 0) {
           errors.push(...rowErrors);
@@ -132,7 +136,7 @@ export async function GET() {
               event_type: mapped.event_type,
               start_time: parseTimestamp(mapped.start_time ?? "") ?? new Date().toISOString(),
               end_time: mapped.end_time ? parseTimestamp(mapped.end_time) : null,
-              status: (mapped.status?.toLowerCase() ?? "scheduled") as "scheduled" | "completed" | "cancelled" | "no_show",
+              status: (mapped.status?.toLowerCase() ?? "scheduled") as "scheduled" | "completed" | "cancelled" | "no_show" | "confirmed" | "rescheduled",
               raw_data: rawRow,
             });
             if (error) {

@@ -18,6 +18,7 @@ const PAYMENT_STATUS_MAP: Record<string, string> = {
 const POS_STATUS_MAP: Record<string, string> = {
   ...PAYMENT_STATUS_MAP,
   approved: "approved",
+  void: "void",
 };
 
 const BOOKING_STATUS_MAP: Record<string, string> = {
@@ -31,6 +32,8 @@ const BOOKING_STATUS_MAP: Record<string, string> = {
   no_show: "no_show",
   "no show": "no_show",
   noshow: "no_show",
+  confirmed: "confirmed",
+  rescheduled: "rescheduled",
 };
 
 const WETRAVEL_STATUS_MAP: Record<string, string> = {

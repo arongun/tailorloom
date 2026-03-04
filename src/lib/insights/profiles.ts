@@ -12,6 +12,8 @@ const PROFILES: Record<string, ProfileConfig> = {
     lost_days: 180,
     tier_b_min: 500,
     revenue_at_risk_min_ltv: 500,
+    new_high_value_window_days: 90,
+    one_and_done_days: 120,
   },
   membership: {
     id: "membership",
@@ -24,6 +26,8 @@ const PROFILES: Record<string, ProfileConfig> = {
     lost_days: 120,
     tier_b_min: 300,
     revenue_at_risk_min_ltv: 300,
+    new_high_value_window_days: 60,
+    one_and_done_days: 90,
   },
   services: {
     id: "services",
@@ -36,6 +40,8 @@ const PROFILES: Record<string, ProfileConfig> = {
     lost_days: 270,
     tier_b_min: 750,
     revenue_at_risk_min_ltv: 750,
+    new_high_value_window_days: 120,
+    one_and_done_days: 180,
   },
 };
 

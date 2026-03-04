@@ -4,7 +4,11 @@ import type {
   ResolvedConfig,
   InsightResult,
 } from "./types";
-import { isRevenueAtRisk, isRepeatCustomer } from "./metrics";
+import {
+  isWinBackTarget,
+  isOneAndDoneRisk,
+  isNewHighValue,
+} from "./metrics";
 
 function formatCurrency(value: number): string {
   if (value >= 1_000_000) {
@@ -16,69 +20,99 @@ function formatCurrency(value: number): string {
   return `$${Math.round(value).toLocaleString("en-US")}`;
 }
 
-// ── Card 1: Revenue at Risk ──────────────────────────────────────
+// ── Row 1: Action Required ──────────────────────────────────
 
-const revenueAtRisk: InsightCardDefinition = {
-  id: "revenue_at_risk",
-  title: "Revenue at Risk",
-  description: "Lifetime revenue from customers who haven't engaged recently",
-  category: "Retention",
-  metricType: "currency",
-  thresholds: { min_ltv: 500, min_inactive_days: 60 },
-  drilldownFilter: { type: "revenue_at_risk", label: "Revenue at Risk" },
+const winBack: InsightCardDefinition = {
+  id: "win_back",
+  title: "Win-Back List",
+  description: "Tier A customers past the at-risk threshold — high LTV at stake",
+  category: "Action",
+  metricType: "count",
+  thresholds: {},
+  drilldownFilter: { type: "win_back", label: "Win-Back Targets" },
   compute: (
     customers: ComputedCustomer[],
     config: ResolvedConfig
   ): InsightResult => {
-    const filtered = customers.filter((c) => isRevenueAtRisk(c, config));
-    const sum = filtered.reduce((acc, c) => acc + c.lifetime_revenue, 0);
+    const filtered = customers.filter((c) => isWinBackTarget(c, config));
+    const ltvAtStake = filtered.reduce((acc, c) => acc + c.lifetime_revenue, 0);
 
     return {
-      id: "revenue_at_risk",
-      title: "Revenue at Risk",
+      id: "win_back",
+      title: "Win-Back List",
       description:
-        "Lifetime revenue from customers who haven't engaged recently",
-      category: "Retention",
-      primaryValue: formatCurrency(sum),
-      secondaryValue: `${filtered.length} customer${filtered.length !== 1 ? "s" : ""}`,
+        "Tier A customers past the at-risk threshold — high LTV at stake",
+      category: "Action",
+      primaryValue: `${filtered.length}`,
+      secondaryValue: `${formatCurrency(ltvAtStake)} LTV at stake`,
       delta: null,
-      drilldownFilter: { type: "revenue_at_risk", label: "Revenue at Risk" },
+      drilldownFilter: { type: "win_back", label: "Win-Back Targets" },
+      row: 1,
     };
   },
 };
 
-// ── Card 2: Repeat Rate ──────────────────────────────────────────
-
-const repeatRate: InsightCardDefinition = {
-  id: "repeat_rate",
-  title: "Repeat Rate",
-  description: "Percentage of customers with 2+ purchases or bookings",
-  category: "Retention",
-  metricType: "percent",
-  thresholds: { min_engagements: 2 },
-  drilldownFilter: { type: "repeat_customers", label: "Repeat Customers" },
+const oneAndDone: InsightCardDefinition = {
+  id: "one_and_done",
+  title: "One-and-Done Risk",
+  description: "Single-purchase customers going cold — convert or lose them",
+  category: "Action",
+  metricType: "count",
+  thresholds: {},
+  drilldownFilter: { type: "one_and_done", label: "One-and-Done Risk" },
   compute: (
     customers: ComputedCustomer[],
-    _config: ResolvedConfig
+    config: ResolvedConfig
   ): InsightResult => {
-    const total = customers.length;
-    const repeats = customers.filter((c) => isRepeatCustomer(c));
-    const rate = total > 0 ? Math.round((repeats.length / total) * 100) : 0;
+    const filtered = customers.filter((c) => isOneAndDoneRisk(c, config));
+    const revenue = filtered.reduce((acc, c) => acc + c.lifetime_revenue, 0);
 
     return {
-      id: "repeat_rate",
-      title: "Repeat Rate",
-      description: "Percentage of customers with 2+ purchases or bookings",
-      category: "Retention",
-      primaryValue: `${rate}%`,
-      secondaryValue: `${repeats.length} of ${total} customers`,
+      id: "one_and_done",
+      title: "One-and-Done Risk",
+      description:
+        "Single-purchase customers going cold — convert or lose them",
+      category: "Action",
+      primaryValue: `${filtered.length}`,
+      secondaryValue: `${formatCurrency(revenue)} in cohort`,
       delta: null,
-      drilldownFilter: { type: "repeat_customers", label: "Repeat Customers" },
+      drilldownFilter: { type: "one_and_done", label: "One-and-Done Risk" },
+      row: 1,
     };
   },
 };
 
-// ── Card 3: Channel Revenue ──────────────────────────────────────
+const newHighValue: InsightCardDefinition = {
+  id: "new_high_value",
+  title: "New High-Value",
+  description: "Recently acquired Tier A customers — nurture to retain",
+  category: "Action",
+  metricType: "count",
+  thresholds: {},
+  drilldownFilter: { type: "new_high_value", label: "New High-Value" },
+  compute: (
+    customers: ComputedCustomer[],
+    config: ResolvedConfig
+  ): InsightResult => {
+    const filtered = customers.filter((c) => isNewHighValue(c, config));
+    const revenue = filtered.reduce((acc, c) => acc + c.lifetime_revenue, 0);
+
+    return {
+      id: "new_high_value",
+      title: "New High-Value",
+      description:
+        "Recently acquired Tier A customers — nurture to retain",
+      category: "Action",
+      primaryValue: `${filtered.length}`,
+      secondaryValue: `${formatCurrency(revenue)} from cohort`,
+      delta: null,
+      drilldownFilter: { type: "new_high_value", label: "New High-Value" },
+      row: 1,
+    };
+  },
+};
+
+// ── Row 2: Intelligence ─────────────────────────────────────
 
 const channelRevenue: InsightCardDefinition = {
   id: "channel_revenue",
@@ -92,7 +126,6 @@ const channelRevenue: InsightCardDefinition = {
     customers: ComputedCustomer[],
     _config: ResolvedConfig
   ): InsightResult => {
-    // Aggregate all customers' channel_revenue into global map
     const channelTotals: Record<string, number> = {};
     for (const customer of customers) {
       for (const [channel, revenue] of Object.entries(
@@ -102,7 +135,6 @@ const channelRevenue: InsightCardDefinition = {
       }
     }
 
-    // Sort channels by revenue desc
     const sorted = Object.entries(channelTotals).sort((a, b) => b[1] - a[1]);
     const topChannel = sorted[0];
     const totalAttributed = sorted.reduce((sum, [, rev]) => sum + rev, 0);
@@ -124,14 +156,70 @@ const channelRevenue: InsightCardDefinition = {
         label: topChannel ? `Channel: ${topChannel[0]}` : "All Channels",
       },
       disabled: noChannels,
+      row: 2,
     };
   },
 };
 
-// ── Registry ─────────────────────────────────────────────────────
+const revenueConcentration: InsightCardDefinition = {
+  id: "revenue_concentration",
+  title: "Revenue Concentration",
+  description: "How concentrated is Tier A revenue across channels",
+  category: "Growth",
+  metricType: "percent",
+  thresholds: {},
+  drilldownFilter: { type: "channel", label: "All Channels" },
+  compute: (
+    customers: ComputedCustomer[],
+    _config: ResolvedConfig
+  ): InsightResult => {
+    // Only Tier A customers
+    const tierA = customers.filter((c) => c.revenue_tier === "Tier A");
+    const channelTotals: Record<string, number> = {};
+    for (const customer of tierA) {
+      for (const [channel, revenue] of Object.entries(
+        customer.channel_revenue
+      )) {
+        channelTotals[channel] = (channelTotals[channel] ?? 0) + revenue;
+      }
+    }
+
+    const sorted = Object.entries(channelTotals).sort((a, b) => b[1] - a[1]);
+    const topChannel = sorted[0];
+    const totalAttributed = sorted.reduce((sum, [, rev]) => sum + rev, 0);
+    const topPct =
+      topChannel && totalAttributed > 0
+        ? Math.round((topChannel[1] / totalAttributed) * 100)
+        : 0;
+    const noData = sorted.length === 0;
+
+    return {
+      id: "revenue_concentration",
+      title: "Revenue Concentration",
+      description: "How concentrated is Tier A revenue across channels",
+      category: "Growth",
+      primaryValue: topChannel ? `${topPct}%` : "–",
+      secondaryValue: topChannel
+        ? `of Tier A revenue — ${topChannel[0]}`
+        : "No Tier A channel data",
+      delta: null,
+      drilldownFilter: {
+        type: "channel",
+        value: topChannel?.[0] ?? "",
+        label: topChannel ? `Channel: ${topChannel[0]}` : "All Channels",
+      },
+      disabled: noData,
+      row: 2,
+    };
+  },
+};
+
+// ── Registry ─────────────────────────────────────────────────
 
 export const INSIGHT_CARDS: InsightCardDefinition[] = [
-  revenueAtRisk,
-  repeatRate,
+  winBack,
+  oneAndDone,
+  newHighValue,
   channelRevenue,
+  revenueConcentration,
 ];

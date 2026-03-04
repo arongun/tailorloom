@@ -3,6 +3,37 @@ import type { SourceSchema, ValidationError } from "@/lib/types";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
+ * Detect common TLD/domain typos that indicate a mistyped email.
+ * Does NOT auto-correct — just detects for stripping + warning.
+ */
+const SUSPICIOUS_PATTERNS = [
+  /\.con$/i,    // .com typo
+  /\.cmo$/i,    // .com typo
+  /\.ocm$/i,    // .com typo
+  /\.cm$/i,     // .com typo
+  /\.nte$/i,    // .net typo
+  /\.nrt$/i,    // .net typo
+  /\.ogr$/i,    // .org typo
+  /\.orh$/i,    // .org typo
+  /\.rog$/i,    // .org typo
+  /@gmal\./i,   // gmail typo
+  /@gmial\./i,  // gmail typo
+  /@gmaul\./i,  // gmail typo
+  /@gmali\./i,  // gmail typo
+  /@gnail\./i,  // gmail typo
+  /@gamil\./i,  // gmail typo
+  /@yaho\./i,   // yahoo typo
+  /@yahooo\./i, // yahoo typo
+  /@hotmal\./i, // hotmail typo
+  /@hotmial\./i,// hotmail typo
+  /@outlok\./i, // outlook typo
+];
+
+function isSuspiciousTLD(email: string): boolean {
+  return SUSPICIOUS_PATTERNS.some((p) => p.test(email));
+}
+
+/**
  * Parse a currency string into a number. Strips $, commas, spaces.
  */
 export function parseCurrency(value: string): number | null {
@@ -47,13 +78,15 @@ export function parseTimestamp(value: string): string | null {
 
 /**
  * Validate a single mapped row against the schema.
+ * Returns errors (hard failures that skip the row) and warnings (stripped fields, row still imports).
  */
 export function validateMappedRow(
   row: Record<string, string | null>,
   schema: SourceSchema,
   rowIndex: number
-): ValidationError[] {
+): { errors: ValidationError[]; warnings: ValidationError[] } {
   const errors: ValidationError[] = [];
+  const warnings: ValidationError[] = [];
 
   for (const field of schema.fields) {
     const value = row[field.key]?.trim() ?? "";
@@ -74,16 +107,37 @@ export function validateMappedRow(
 
     // Type-specific validation
     switch (field.type) {
-      case "email":
-        if (!EMAIL_REGEX.test(value)) {
-          errors.push({
-            row: rowIndex,
-            field: field.key,
-            message: `Invalid email format: "${value}"`,
-            value,
-          });
+      case "email": {
+        const badFormat = !EMAIL_REGEX.test(value);
+        const suspiciousTld = !badFormat && isSuspiciousTLD(value);
+
+        if (badFormat || suspiciousTld) {
+          if (field.required) {
+            // Required email with bad format is a hard error
+            errors.push({
+              row: rowIndex,
+              field: field.key,
+              message: badFormat
+                ? `Invalid email format: "${value}"`
+                : `Suspicious email (possible typo): "${value}"`,
+              value,
+            });
+          } else {
+            // Optional email — strip to null and warn
+            row[field.key] = null;
+            warnings.push({
+              row: rowIndex,
+              field: field.key,
+              message: badFormat
+                ? `Invalid email stripped: "${value}"`
+                : `Suspicious email stripped (possible typo): "${value}"`,
+              value,
+              severity: "warning",
+            });
+          }
         }
         break;
+      }
 
       case "number":
         if (parseNumber(value) === null) {
@@ -132,7 +186,7 @@ export function validateMappedRow(
     }
   }
 
-  return errors;
+  return { errors, warnings };
 }
 
 /**

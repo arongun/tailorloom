@@ -97,6 +97,7 @@ export async function previewCSV(options: PreviewOptions): Promise<{
 
   // Map and validate all rows
   const allErrors: ValidationError[] = [];
+  const allWarnings: ValidationError[] = [];
   const mappedRows: Record<string, string | null>[] = [];
   let validCount = 0;
   let errorCount = 0;
@@ -110,7 +111,11 @@ export async function previewCSV(options: PreviewOptions): Promise<{
     if (mapped.status) {
       mapped.status = normalizeStatus(mapped.status, options.source);
     }
-    const rowErrors = validateMappedRow(mapped, schema, i + 1);
+    const { errors: rowErrors, warnings: rowWarnings } = validateMappedRow(mapped, schema, i + 1);
+
+    if (rowWarnings.length > 0) {
+      allWarnings.push(...rowWarnings);
+    }
 
     if (rowErrors.length > 0) {
       allErrors.push(...rowErrors);
@@ -127,7 +132,7 @@ export async function previewCSV(options: PreviewOptions): Promise<{
   return {
     preview: {
       mappedRows,
-      validationErrors: allErrors.slice(0, 50), // Limit error count for display
+      validationErrors: [...allErrors.slice(0, 50), ...allWarnings.slice(0, 50)],
       totalRows: parsed.totalRows,
       validRows: validCount,
       errorRows: errorCount,
@@ -164,6 +169,7 @@ export async function previewStitching(options: {
   const newRows: StitchPreviewRow[] = [];
   const duplicateRows: StitchPreviewRow[] = [];
   const enrichmentRows: StitchPreviewRow[] = [];
+  const allWarnings: ValidationError[] = [];
 
   let confidentCount = 0;
   let uncertainCount = 0;
@@ -179,7 +185,10 @@ export async function previewStitching(options: {
     if (mapped.status) {
       mapped.status = normalizeStatus(mapped.status, options.source);
     }
-    const rowErrors = validateMappedRow(mapped, schema, i + 1);
+    const { errors: rowErrors, warnings: rowWarnings } = validateMappedRow(mapped, schema, i + 1);
+    if (rowWarnings.length > 0) {
+      allWarnings.push(...rowWarnings);
+    }
     if (rowErrors.length > 0) continue;
 
     totalValid++;
@@ -282,6 +291,7 @@ export async function previewStitching(options: {
     newRows,
     duplicateRows,
     enrichmentRows,
+    warnings: allWarnings.slice(0, 50),
   };
 }
 
@@ -366,7 +376,12 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
     if (mapped.status) {
       mapped.status = normalizeStatus(mapped.status, options.source);
     }
-    const rowErrors = validateMappedRow(mapped, schema, i + 1);
+    const { errors: rowErrors, warnings: rowWarnings } = validateMappedRow(mapped, schema, i + 1);
+
+    // Collect warnings (stripped emails etc.) — row still imports
+    if (rowWarnings.length > 0) {
+      errors.push(...rowWarnings.map((w) => ({ ...w, severity: "warning" as const })));
+    }
 
     if (rowErrors.length > 0) {
       errors.push(...rowErrors);
@@ -529,6 +544,10 @@ async function insertSourceRow(
   importId: string,
   rawRow: Record<string, string>
 ): Promise<boolean> {
+  if (!customerId) {
+    throw new Error(`Cannot insert ${source} row without customer_id (import ${importId})`);
+  }
+
   switch (source) {
     case "stripe": {
       const { error } = await admin.from("payments").insert({
@@ -559,7 +578,7 @@ async function insertSourceRow(
         source: "pos",
         amount: parseCurrency(mapped.amount ?? "0") ?? 0,
         currency: mapped.currency ?? "USD",
-        status: (mapped.status?.toLowerCase() as "approved" | "succeeded" | "pending" | "failed" | "refunded") ?? "approved",
+        status: (mapped.status?.toLowerCase() as "approved" | "succeeded" | "pending" | "failed" | "refunded" | "void") ?? "approved",
         payment_date: parseTimestamp(mapped.payment_date ?? "") ?? new Date().toISOString(),
         payment_type: mapped.payment_type ?? null,
         raw_data: rawRow,
@@ -581,7 +600,7 @@ async function insertSourceRow(
         event_type: mapped.event_type,
         start_time: parseTimestamp(mapped.start_time ?? "") ?? new Date().toISOString(),
         end_time: mapped.end_time ? parseTimestamp(mapped.end_time) : null,
-        status: (mapped.status?.toLowerCase() as "scheduled" | "completed" | "cancelled" | "no_show") ?? "scheduled",
+        status: (mapped.status?.toLowerCase() as "scheduled" | "completed" | "cancelled" | "no_show" | "confirmed" | "rescheduled") ?? "scheduled",
         raw_data: rawRow,
       });
 
@@ -630,7 +649,7 @@ async function insertSourceRow(
         start_time: bookingDate,
         start_date: mapped.trip_start_date ?? null,
         end_date: mapped.trip_end_date ?? null,
-        status: status as "confirmed" | "cancelled" | "completed" | "scheduled",
+        status: status as "confirmed" | "cancelled" | "completed" | "scheduled" | "rescheduled",
         lead_source_channel: mapped.lead_source_channel ?? null,
         utm_source: mapped.utm_source ?? null,
         utm_medium: mapped.utm_medium ?? null,

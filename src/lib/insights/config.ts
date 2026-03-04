@@ -22,7 +22,7 @@ export async function resolveConfig(
   const { data: dbRow } = await admin
     .from("insight_config")
     .select(
-      "active_profile, at_risk_days, dormant_days, lost_days, repeat_purchase_min"
+      "active_profile, at_risk_days, dormant_days, lost_days, repeat_purchase_min, new_high_value_window_days, one_and_done_days"
     )
     .eq("org_id", DEFAULT_ORG_ID)
     .single();
@@ -45,6 +45,10 @@ export async function resolveConfig(
     if (dbRow.lost_days != null) resolved.lost_days = dbRow.lost_days;
     if (dbRow.repeat_purchase_min != null)
       resolved.repeat_purchase_min = dbRow.repeat_purchase_min;
+    if (dbRow.new_high_value_window_days != null)
+      resolved.new_high_value_window_days = dbRow.new_high_value_window_days;
+    if (dbRow.one_and_done_days != null)
+      resolved.one_and_done_days = dbRow.one_and_done_days;
   }
 
   // Derived field

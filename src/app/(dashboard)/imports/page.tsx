@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Undo2,
   Eye,
+  Download,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,9 +46,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   getImportHistory,
+  getImportRows,
   revertImport,
   type ImportHistoryRow,
 } from "@/lib/actions/history";
+import Papa from "papaparse";
 import { CsvViewerSheet } from "@/components/csv-viewer-sheet";
 import type { SourceType } from "@/lib/types";
 import { toast } from "sonner";
@@ -132,6 +135,7 @@ export default function ImportsPage() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewingImportId, setViewingImportId] = useState<string | null>(null);
   const [viewingFileName, setViewingFileName] = useState("");
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const fetchImports = useCallback(async () => {
     setLoading(true);
@@ -169,6 +173,29 @@ export default function ImportsPage() {
       );
     } finally {
       setRevertingId(null);
+    }
+  };
+
+  const handleDownload = async (importId: string, fileName: string) => {
+    setDownloadingId(importId);
+    try {
+      const data = await getImportRows(importId);
+      if (data.rows.length === 0) {
+        toast.error("No data to download");
+        return;
+      }
+      const csv = Papa.unparse(data.rows, { columns: data.headers });
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName.endsWith(".csv") ? fileName : `${fileName}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Failed to download CSV");
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -321,19 +348,34 @@ export default function ImportsPage() {
                         <div className="flex items-center gap-1">
                           {imp.status !== "pending" &&
                             imp.status !== "processing" && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 text-[11px] text-text-muted hover:text-text-primary"
-                                onClick={() => {
-                                  setViewingImportId(imp.id);
-                                  setViewingFileName(imp.file_name);
-                                  setViewerOpen(true);
-                                }}
-                              >
-                                <Eye className="h-3 w-3 mr-1" />
-                                View
-                              </Button>
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-[11px] text-text-muted hover:text-text-primary"
+                                  onClick={() => {
+                                    setViewingImportId(imp.id);
+                                    setViewingFileName(imp.file_name);
+                                    setViewerOpen(true);
+                                  }}
+                                >
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  View
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-[11px] text-text-muted hover:text-text-primary"
+                                  disabled={downloadingId === imp.id}
+                                  onClick={() => handleDownload(imp.id, imp.file_name)}
+                                >
+                                  {downloadingId === imp.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Download className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </>
                             )}
                           {canRevert && (
                             <AlertDialog

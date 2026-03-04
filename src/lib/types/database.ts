@@ -3,8 +3,8 @@
 
 export type SourceType = "stripe" | "calendly" | "passline" | "pos" | "wetravel" | "manual";
 export type ImportStatus = "pending" | "processing" | "completed" | "failed" | "skipped" | "reverted";
-export type PaymentStatus = "succeeded" | "pending" | "failed" | "refunded" | "approved";
-export type BookingStatus = "scheduled" | "completed" | "cancelled" | "no_show" | "confirmed";
+export type PaymentStatus = "succeeded" | "pending" | "failed" | "refunded" | "approved" | "void";
+export type BookingStatus = "scheduled" | "completed" | "cancelled" | "no_show" | "confirmed" | "rescheduled";
 export type ConflictStatus = "pending" | "merged" | "dismissed" | "split";
 
 export interface Organization {
@@ -60,12 +60,13 @@ export interface ImportError {
   row: number;
   field?: string;
   message: string;
+  severity?: "error" | "warning";
 }
 
 export interface Payment {
   id: string;
   org_id: string;
-  customer_id: string | null;
+  customer_id: string;
   import_id: string | null;
   external_payment_id: string | null;
   source: string;
@@ -81,7 +82,7 @@ export interface Payment {
 export interface Booking {
   id: string;
   org_id: string;
-  customer_id: string | null;
+  customer_id: string;
   import_id: string | null;
   external_booking_id: string | null;
   source: string;
@@ -106,7 +107,7 @@ export interface Booking {
 export interface Attendance {
   id: string;
   org_id: string;
-  customer_id: string | null;
+  customer_id: string;
   import_id: string | null;
   external_attendance_id: string | null;
   source: string;
@@ -127,6 +128,8 @@ export interface InsightConfig {
   lost_days: number | null;
   repeat_purchase_min: number | null;
   active_profile: string | null;
+  new_high_value_window_days: number | null;
+  one_and_done_days: number | null;
   created_at: string;
   updated_at: string;
 }

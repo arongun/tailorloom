@@ -1,7 +1,7 @@
 import { getComputedCustomersForTable } from "@/lib/actions/dashboard";
 import { CustomersClient } from "@/components/customers-client";
 
-const VALID_SEGMENT = new Set(["revenue_at_risk", "repeat_customers", "channel"]);
+const VALID_SEGMENT = new Set(["revenue_at_risk", "repeat_customers", "channel", "win_back", "one_and_done", "new_high_value"]);
 const VALID_RISK = new Set(["Healthy", "At Risk", "Dormant", "Lost"]);
 const VALID_TIER = new Set(["Tier A", "Tier B", "Tier C"]);
 const VALID_REPEAT = new Set(["repeat", "one_time"]);

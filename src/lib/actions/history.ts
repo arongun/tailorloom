@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type {
   SourceType,
   ImportHistory,
+  ImportError,
   ConflictStatus,
 } from "@/lib/types";
 
@@ -131,6 +132,37 @@ export async function getImportRows(
   const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
 
   return { headers, rows };
+}
+
+// ─── Import Metadata (for View dialog) ───────────────────
+
+export async function getImportMetadata(importId: string): Promise<{
+  column_mapping: Record<string, string> | null;
+  errors: ImportError[] | null;
+  source: SourceType;
+}> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from("import_history")
+    .select("column_mapping, errors, source")
+    .eq("id", importId)
+    .eq("org_id", DEFAULT_ORG_ID)
+    .single();
+
+  if (error || !data) throw new Error("Import not found");
+
+  return {
+    column_mapping: data.column_mapping as Record<string, string> | null,
+    errors: data.errors as ImportError[] | null,
+    source: data.source as SourceType,
+  };
 }
 
 // ─── Conflicts ─────────────────────────────────────────────

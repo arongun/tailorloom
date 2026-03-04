@@ -49,6 +49,7 @@ export interface ValidationError {
   field: string;
   message: string;
   value?: string;
+  severity?: "error" | "warning";
 }
 
 export interface MappedRow {
@@ -144,6 +145,7 @@ export interface StitchPreviewResult {
   newRows: StitchPreviewRow[];
   duplicateRows: StitchPreviewRow[];
   enrichmentRows: StitchPreviewRow[];
+  warnings: ValidationError[];
 }
 
 export interface ImportResultDetailed extends ImportResult {
