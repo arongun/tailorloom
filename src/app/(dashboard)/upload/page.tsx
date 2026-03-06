@@ -16,24 +16,30 @@ import {
   UserPlus,
   Copy,
   AlertTriangle,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 
-import { UploadMapper } from "./components/upload-mapper";
+import { UploadMapper, type MultiFileEntry } from "./components/upload-mapper";
 import { StitchPreview } from "./components/stitch-preview";
 
-import { previewCSV, uploadCSV, previewStitching } from "@/lib/actions/import";
+import { previewCSV, uploadCSV, previewStitching, previewCRMStitching, previewAttributionStitching } from "@/lib/actions/import";
+import { generateMappingSuggestions, suggestionsToMapping } from "@/lib/csv/heuristic-mapper";
+import { getSchema } from "@/lib/csv/schemas";
+import { parseCSVContent } from "@/lib/csv/parser";
 import { saveMappingTemplate } from "@/lib/actions/mappings";
 
 import type {
   SourceType,
+  SchemaKey,
   ImportResultDetailed,
   StitchPreviewResult,
   StitchDecisions,
 } from "@/lib/types";
+import { detectSource, isConfidentDetection, type DetectionResult } from "@/lib/csv/detect-source";
 
 import {
   saveUploadSession,
@@ -41,6 +47,23 @@ import {
   clearUploadSession,
 } from "@/lib/upload-session";
 import type { MapperRestoredData } from "@/lib/upload-session";
+
+interface MultiFileQueueEntry {
+  file: File;
+  content: string;
+  source: SourceType | null;
+  headers: string[];
+  totalRows: number;
+  needsSourcePick: boolean;
+  detectionResults: DetectionResult[];
+  mapping?: Record<string, string>;
+  // Preflight results (filled after "Preview All")
+  preflight?: { newRows: number; matchedRows: number; uncertainRows: number };
+  // Import status
+  status: "pending" | "previewing" | "ready" | "importing" | "done" | "error";
+  result?: ImportResultDetailed;
+  error?: string;
+}
 
 type Step = 1 | 2 | 3;
 
@@ -56,6 +79,7 @@ export default function UploadPage() {
   // Step 1 — data from UploadMapper
   const mapperData = useRef<{
     source: SourceType;
+    schemaKey?: SchemaKey;
     file: File;
     content: string;
     mapping: Record<string, string>;
@@ -75,6 +99,11 @@ export default function UploadPage() {
   const [importResult, setImportResult] =
     useState<ImportResultDetailed | null>(null);
   const [isImporting, setIsImporting] = useState(false);
+
+  // Multi-file queue
+  const [multiFileQueue, setMultiFileQueue] = useState<MultiFileQueueEntry[] | null>(null);
+  const [multiImporting, setMultiImporting] = useState(false);
+  const addMoreInputRef = useRef<HTMLInputElement>(null);
 
   // Session persistence
   const [restoredMapperData, setRestoredMapperData] =
@@ -110,6 +139,7 @@ export default function UploadPage() {
   const handleMapperReady = useCallback(
     (data: {
       source: SourceType;
+      schemaKey?: SchemaKey;
       file: File;
       content: string;
       mapping: Record<string, string>;
@@ -256,6 +286,7 @@ export default function UploadPage() {
     try {
       const importRes = await uploadCSV({
         source: data.source,
+        schemaKey: data.schemaKey,
         fileName: data.file.name,
         content: data.content,
         mapping: data.mapping,
@@ -311,6 +342,217 @@ export default function UploadPage() {
     setRestoredMapperData(null);
   };
 
+  // ─── Multi-file handlers ──────────────────────────────
+
+  const handleMultipleFiles = useCallback((entries: MultiFileEntry[]) => {
+    const entriesWithMapping = entries.map((e) => {
+      if (!e.source) return { ...e, status: "pending" as const };
+      const schema = getSchema(e.source);
+      if (!schema) return { ...e, status: "pending" as const };
+      const suggestions = generateMappingSuggestions(e.headers, schema, []);
+      const mapping = suggestionsToMapping(suggestions);
+      return { ...e, status: "pending" as const, mapping };
+    });
+    setMultiFileQueue(entriesWithMapping);
+  }, []);
+
+  const handleMultiSourcePick = useCallback((index: number, source: SourceType) => {
+    setMultiFileQueue((prev) => {
+      if (!prev) return prev;
+      const next = [...prev];
+      const entry = next[index];
+      const schema = getSchema(source);
+      let mapping: Record<string, string> | undefined;
+      if (schema) {
+        const suggestions = generateMappingSuggestions(entry.headers, schema, []);
+        mapping = suggestionsToMapping(suggestions);
+      }
+      next[index] = { ...entry, source, needsSourcePick: false, mapping };
+      return next;
+    });
+  }, []);
+
+  const handleMultiPreviewAll = useCallback(async () => {
+    if (!multiFileQueue) return;
+
+    for (let i = 0; i < multiFileQueue.length; i++) {
+      const entry = multiFileQueue[i];
+      if (!entry.source || entry.preflight || entry.status === "error") continue;
+
+      // Set "previewing" status and yield to let React render spinner
+      setMultiFileQueue((prev) => {
+        if (!prev) return prev;
+        const next = [...prev];
+        next[i] = { ...next[i], status: "previewing" };
+        return next;
+      });
+      await new Promise((r) => setTimeout(r, 50));
+
+      try {
+        const mapping = entry.mapping;
+        if (!mapping) {
+          setMultiFileQueue((prev) => {
+            if (!prev) return prev;
+            const next = [...prev];
+            next[i] = { ...next[i], status: "error", error: "No mapping available" };
+            return next;
+          });
+          continue;
+        }
+
+        let stitchResult;
+        if (entry.source === "crm") {
+          stitchResult = await previewCRMStitching({ content: entry.content, mapping });
+        } else if (entry.source === "attribution") {
+          stitchResult = await previewAttributionStitching({ content: entry.content, mapping });
+        } else {
+          stitchResult = await previewStitching({ source: entry.source, content: entry.content, mapping });
+        }
+
+        setMultiFileQueue((prev) => {
+          if (!prev) return prev;
+          const next = [...prev];
+          next[i] = {
+            ...next[i],
+            status: "ready",
+            preflight: {
+              newRows: stitchResult.summary.newCustomers,
+              matchedRows: stitchResult.summary.confidentMatches + stitchResult.summary.enrichments,
+              uncertainRows: stitchResult.summary.uncertainMatches,
+            },
+          };
+          return next;
+        });
+      } catch (err) {
+        setMultiFileQueue((prev) => {
+          if (!prev) return prev;
+          const next = [...prev];
+          next[i] = { ...next[i], status: "error", error: err instanceof Error ? err.message : "Preview failed" };
+          return next;
+        });
+      }
+    }
+  }, [multiFileQueue]);
+
+  const handleMultiImportAll = useCallback(async () => {
+    if (!multiFileQueue) return;
+    setMultiImporting(true);
+
+    for (let i = 0; i < multiFileQueue.length; i++) {
+      const entry = multiFileQueue[i];
+      if (!entry.source || entry.status === "done" || entry.status === "error") continue;
+
+      // Set "importing" status and yield
+      setMultiFileQueue((prev) => {
+        if (!prev) return prev;
+        const next = [...prev];
+        next[i] = { ...next[i], status: "importing" };
+        return next;
+      });
+      await new Promise((r) => setTimeout(r, 50));
+
+      try {
+        const mapping = entry.mapping;
+        if (!mapping) {
+          setMultiFileQueue((prev) => {
+            if (!prev) return prev;
+            const next = [...prev];
+            next[i] = { ...next[i], status: "error", error: "No mapping available" };
+            return next;
+          });
+          continue;
+        }
+
+        const result = await uploadCSV({
+          source: entry.source,
+          fileName: entry.file.name,
+          content: entry.content,
+          mapping,
+          stitchDecisions: {},
+        });
+
+        setMultiFileQueue((prev) => {
+          if (!prev) return prev;
+          const next = [...prev];
+          next[i] = { ...next[i], status: "done", result };
+          return next;
+        });
+      } catch (err) {
+        setMultiFileQueue((prev) => {
+          if (!prev) return prev;
+          const next = [...prev];
+          next[i] = { ...next[i], status: "error", error: err instanceof Error ? err.message : "Import failed" };
+          return next;
+        });
+      }
+    }
+
+    setMultiImporting(false);
+
+    // Read final state for toast
+    setMultiFileQueue((prev) => {
+      if (!prev) return prev;
+      const totalImported = prev.reduce((sum, e) => sum + (e.result?.importedRows ?? 0), 0);
+      const totalErrors = prev.filter((e) => e.status === "error").length;
+      if (totalErrors === 0) {
+        toast.success(`${totalImported} rows imported from ${prev.length} files`);
+      } else {
+        toast.warning(`${totalImported} rows imported, ${totalErrors} file(s) had errors`);
+      }
+      return prev;
+    });
+  }, [multiFileQueue]);
+
+  const handleAddMoreFiles = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const csvFiles = Array.from(files).filter((f) => f.name.toLowerCase().endsWith(".csv"));
+    if (csvFiles.length === 0) return;
+
+    const newEntries: MultiFileQueueEntry[] = [];
+    for (const f of csvFiles) {
+      if (f.size > 10 * 1024 * 1024) continue;
+      const content = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsText(f);
+      });
+      if (!content?.trim()) continue;
+
+      const parsed = parseCSVContent(content);
+      const results = detectSource(parsed.headers, parsed.sampleRows);
+      const confident = isConfidentDetection(results);
+      const detectedKey = confident ? results[0].source : null;
+      const dbSource = detectedKey ? (detectedKey.startsWith("attribution") ? "attribution" : detectedKey) as SourceType : null;
+
+      let mapping: Record<string, string> | undefined;
+      if (dbSource) {
+        const schema = getSchema(dbSource);
+        if (schema) {
+          const suggestions = generateMappingSuggestions(parsed.headers, schema, []);
+          mapping = suggestionsToMapping(suggestions);
+        }
+      }
+
+      newEntries.push({
+        file: f,
+        content,
+        source: dbSource,
+        headers: parsed.headers,
+        totalRows: parsed.totalRows,
+        needsSourcePick: !confident,
+        detectionResults: results,
+        mapping,
+        status: "pending",
+      });
+    }
+
+    if (newEntries.length > 0) {
+      setMultiFileQueue((prev) => prev ? [...prev, ...newEntries] : newEntries);
+    }
+    if (addMoreInputRef.current) addMoreInputRef.current.value = "";
+  }, []);
+
   const canContinue = isMapperReady &&
     !!mapperData.current &&
     Object.keys(mapperData.current.mapping).length > 0;
@@ -327,7 +569,7 @@ export default function UploadPage() {
           Upload Data
         </h1>
         <p className="mt-1 text-[13px] text-text-muted">
-          Import CSV files from Stripe, Calendly, PassLine, POS, or WeTravel
+          Import revenue and customer data from your payment, booking, ticketing, or POS systems.
         </p>
       </div>
 
@@ -379,7 +621,182 @@ export default function UploadPage() {
 
       {/* Step content */}
       <div className="animate-fade-in-up stagger-3">
-        {step === 1 && (
+        {/* Multi-file queue mode */}
+        {multiFileQueue && (
+          <div className="space-y-4">
+            <p className="text-[13px] text-text-muted mb-4">
+              {multiFileQueue.length} files queued for import
+            </p>
+
+            {/* Uncertain matches warning */}
+            {multiFileQueue.some((e) => e.preflight && e.preflight.uncertainRows > 0) && (
+              <div className="flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-500/20 bg-amber-50/60 dark:bg-amber-500/5 px-3 py-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  {multiFileQueue.reduce((sum, e) => sum + (e.preflight?.uncertainRows ?? 0), 0)} rows across{" "}
+                  {multiFileQueue.filter((e) => e.preflight && e.preflight.uncertainRows > 0).length} files have uncertain matches and will be created as new customers
+                </p>
+              </div>
+            )}
+
+            <div className="rounded-xl border border-border-default overflow-hidden">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-border-muted bg-surface-elevated/50">
+                    <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider">File</th>
+                    <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Source</th>
+                    <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider text-right">Rows</th>
+                    {multiFileQueue.some((e) => e.preflight) && (
+                      <>
+                        <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider text-right">New</th>
+                        <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider text-right">Matched</th>
+                        <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider text-right">Uncertain</th>
+                      </>
+                    )}
+                    <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {multiFileQueue.map((entry, idx) => (
+                    <tr key={idx} className="border-b border-border-muted last:border-b-0">
+                      <td className="px-4 py-2.5 text-[13px] font-medium text-text-primary truncate max-w-[200px]">
+                        {entry.file.name}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {entry.source ? (
+                          <span className="text-[12px] text-text-secondary">{entry.source}</span>
+                        ) : entry.needsSourcePick ? (
+                          <div className="flex gap-1">
+                            {(["crm", "attribution", ...entry.detectionResults.map((r) => r.source)] as SourceType[]).slice(0, 4).map((s) => (
+                              <button
+                                key={s}
+                                onClick={() => handleMultiSourcePick(idx, s)}
+                                className="px-2 py-0.5 rounded text-[10px] font-medium border border-border-default text-text-secondary hover:bg-surface-elevated transition-colors"
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-[12px] text-text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-[13px] text-right tabular-nums text-text-secondary">
+                        {entry.totalRows}
+                      </td>
+                      {multiFileQueue.some((e) => e.preflight) && (
+                        <>
+                          <td className="px-4 py-2.5 text-[13px] text-right tabular-nums text-text-secondary">
+                            {entry.preflight?.newRows ?? "—"}
+                          </td>
+                          <td className="px-4 py-2.5 text-[13px] text-right tabular-nums text-emerald-600">
+                            {entry.preflight?.matchedRows ?? "—"}
+                          </td>
+                          <td className="px-4 py-2.5 text-[13px] text-right tabular-nums text-amber-600">
+                            {entry.preflight?.uncertainRows ?? "—"}
+                          </td>
+                        </>
+                      )}
+                      <td className="px-4 py-2.5">
+                        {entry.status === "pending" && <span className="text-[11px] text-text-muted">Pending</span>}
+                        {entry.status === "previewing" && <Loader2 className="h-3 w-3 text-text-muted animate-spin" />}
+                        {entry.status === "ready" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
+                        {entry.status === "importing" && <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />}
+                        {entry.status === "done" && (
+                          <span className="text-[11px] text-emerald-600 font-medium">
+                            {entry.result?.importedRows} imported
+                          </span>
+                        )}
+                        {entry.status === "error" && (
+                          <span className="text-[11px] text-rose-600" title={entry.error}>Error</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Add more files */}
+            {!multiImporting && !multiFileQueue.every((e) => e.status === "done" || e.status === "error") && (
+              <div className="flex justify-center">
+                <button
+                  onClick={() => addMoreInputRef.current?.click()}
+                  className="flex items-center gap-1.5 rounded-lg border border-dashed border-border-default px-3 py-1.5 text-[12px] text-text-muted hover:text-text-secondary hover:border-border-default hover:bg-surface-elevated/50 transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add more files
+                </button>
+                <input
+                  ref={addMoreInputRef}
+                  type="file"
+                  accept=".csv"
+                  multiple
+                  onChange={(e) => handleAddMoreFiles(e.target.files)}
+                  className="hidden"
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-between">
+              <Button
+                variant="ghost"
+                onClick={() => setMultiFileQueue(null)}
+                className="text-[13px] text-text-muted hover:text-text-secondary"
+              >
+                Cancel
+              </Button>
+              <div className="flex items-center gap-2">
+                {multiFileQueue.some((e) => e.status === "pending" && !e.preflight) && (
+                  <Button
+                    onClick={handleMultiPreviewAll}
+                    disabled={multiFileQueue.some((e) => !e.source) || multiFileQueue.some((e) => e.status === "previewing")}
+                    className="text-[13px]"
+                  >
+                    {multiFileQueue.some((e) => e.status === "previewing") ? (
+                      <>
+                        <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                        Previewing...
+                      </>
+                    ) : (
+                      "Preview All"
+                    )}
+                  </Button>
+                )}
+                {multiFileQueue.some((e) => e.preflight) && !multiFileQueue.every((e) => e.status === "done" || e.status === "error") && (
+                  <Button
+                    onClick={handleMultiImportAll}
+                    disabled={multiImporting}
+                    className="text-[13px]"
+                  >
+                    {multiImporting ? (
+                      <>
+                        <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                        Importing...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="mr-1.5 h-4 w-4" />
+                        Import All
+                      </>
+                    )}
+                  </Button>
+                )}
+                {multiFileQueue.every((e) => e.status === "done" || e.status === "error") && (
+                  <Button
+                    onClick={() => setMultiFileQueue(null)}
+                    className="text-[13px]"
+                  >
+                    Done
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Single file flow */}
+        {!multiFileQueue && step === 1 && (
           <div className="space-y-4">
             <p className="text-[13px] text-text-muted mb-4">
               Upload a CSV export — the source type is auto-detected from the
@@ -389,12 +806,13 @@ export default function UploadPage() {
               onReady={handleMapperReady}
               onClear={handleMapperClear}
               onSaveTemplate={handleSaveTemplate}
+              onMultipleFiles={handleMultipleFiles}
               initialData={restoredMapperData}
             />
           </div>
         )}
 
-        {step === 2 && stitchPreview && (
+        {!multiFileQueue && step === 2 && stitchPreview && (
           <div className="space-y-4">
             {stitchPreview.summary.confidentMatches === 0 &&
             stitchPreview.summary.uncertainMatches === 0 &&
@@ -435,7 +853,7 @@ export default function UploadPage() {
           </div>
         )}
 
-        {step === 3 && (
+        {!multiFileQueue && step === 3 && (
           <DetailedImportResultView
             result={importResult}
             isImporting={isImporting}
@@ -443,8 +861,8 @@ export default function UploadPage() {
         )}
       </div>
 
-      {/* Navigation */}
-      <div className="mt-8 flex items-center justify-between animate-fade-in-up stagger-4">
+      {/* Navigation (hidden in multi-file mode) */}
+      {!multiFileQueue && <div className="mt-8 flex items-center justify-between animate-fade-in-up stagger-4">
         <div>
           {step === 2 && (
             <Button
@@ -511,7 +929,7 @@ export default function UploadPage() {
             )
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

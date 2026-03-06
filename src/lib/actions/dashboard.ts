@@ -162,7 +162,7 @@ export async function getRevenueTrend(
 
   let query = admin
     .from("payments")
-    .select("amount, payment_date, source")
+    .select("amount_usd, payment_date, source")
     .eq("org_id", DEFAULT_ORG_ID)
     .in("status", ["succeeded", "approved"])
     .order("payment_date", { ascending: true });
@@ -202,9 +202,10 @@ export async function getRevenueTrend(
   }
 
   for (const p of payments ?? []) {
+    if (p.amount_usd == null) continue; // Skip payments without FX conversion
     const d = new Date(p.payment_date);
     const key = toBucketKey(d, interval);
-    const amount = Number(p.amount) || 0;
+    const amount = Number(p.amount_usd) || 0;
     const source = (p.source || "manual").toLowerCase() as typeof SOURCES[number];
 
     const existing = totalMap.get(key) ?? { revenue: 0, purchases: 0 };
@@ -248,15 +249,16 @@ export async function getRevenueBySource(dateRange?: DateRangeParam): Promise<Re
   await requireAuth();
   const admin = createAdminClient();
 
-  let query = admin.from("payments").select("source, amount").eq("org_id", DEFAULT_ORG_ID).in("status", ["succeeded", "approved"]);
+  let query = admin.from("payments").select("source, amount_usd").eq("org_id", DEFAULT_ORG_ID).in("status", ["succeeded", "approved"]);
   query = applyDateFilter(query, "payment_date", dateRange);
   const { data: payments } = await query;
 
   const sourceMap = new Map<string, number>();
   let grandTotal = 0;
   for (const p of payments ?? []) {
+    if (p.amount_usd == null) continue;
     const source = p.source || "manual";
-    const amount = Number(p.amount) || 0;
+    const amount = Number(p.amount_usd) || 0;
     sourceMap.set(source, (sourceMap.get(source) ?? 0) + amount);
     grandTotal += amount;
   }
@@ -276,7 +278,7 @@ export async function getTopCustomers(dateRange?: DateRangeParam, limit: number 
   await requireAuth();
   const admin = createAdminClient();
 
-  let paymentsQuery = admin.from("payments").select("customer_id, amount").eq("org_id", DEFAULT_ORG_ID).in("status", ["succeeded", "approved"]);
+  let paymentsQuery = admin.from("payments").select("customer_id, amount_usd").eq("org_id", DEFAULT_ORG_ID).in("status", ["succeeded", "approved"]);
   paymentsQuery = applyDateFilter(paymentsQuery, "payment_date", dateRange);
 
   const [paymentsRes, customersRes, sourcesRes] = await Promise.all([
@@ -291,8 +293,8 @@ export async function getTopCustomers(dateRange?: DateRangeParam, limit: number 
 
   const revenueMap = new Map<string, number>();
   for (const p of payments) {
-    if (!p.customer_id) continue;
-    revenueMap.set(p.customer_id, (revenueMap.get(p.customer_id) ?? 0) + (Number(p.amount) || 0));
+    if (!p.customer_id || p.amount_usd == null) continue;
+    revenueMap.set(p.customer_id, (revenueMap.get(p.customer_id) ?? 0) + (Number(p.amount_usd) || 0));
   }
 
   const sourceMap = new Map<string, Set<string>>();
@@ -351,7 +353,7 @@ export async function getCustomerDetail(customerId: string, profileParam?: strin
 
   const [customerRes, paymentsRes, bookingsRes, attendanceRes, sourcesRes] = await Promise.all([
     admin.from("customers").select("id, full_name, email, phone, country").eq("id", customerId).eq("org_id", DEFAULT_ORG_ID).single(),
-    admin.from("payments").select("id, source, amount, payment_date, payment_type, status, external_payment_id, currency, raw_data").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID).order("payment_date", { ascending: false }),
+    admin.from("payments").select("id, source, amount, amount_usd, payment_date, payment_type, status, external_payment_id, currency, raw_data").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID).order("payment_date", { ascending: false }),
     admin.from("bookings").select("id, source, event_type, start_time, end_time, start_date, end_date, status, external_booking_id, utm_source, utm_medium, utm_campaign, utm_content, referrer, referral_partner, lead_source_channel, lead_capture_method, raw_data").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID).order("start_time", { ascending: false }),
     admin.from("attendance").select("id, source, event_name, check_in_time, ticket_type, external_attendance_id, raw_data").eq("customer_id", customerId).eq("org_id", DEFAULT_ORG_ID).order("check_in_time", { ascending: false }),
     admin.from("customer_sources").select("source, external_id, external_email, external_name").eq("customer_id", customerId),
@@ -383,14 +385,15 @@ export async function getCustomerDetail(customerId: string, profileParam?: strin
   }
 
   const validPayments = payments.filter((p: { status: string }) => p.status === "succeeded" || p.status === "approved");
-  const totalRevenue = validPayments.reduce((sum: number, p: { amount: number }) => sum + (Number(p.amount) || 0), 0);
+  const validWithFx = validPayments.filter((p: { amount_usd: number | null }) => p.amount_usd != null);
+  const totalRevenue = validWithFx.reduce((sum: number, p: { amount_usd: number | null }) => sum + (Number(p.amount_usd) || 0), 0);
   const purchaseCount = validPayments.length;
 
-  // Compute revenue by source from valid payments only
+  // Compute revenue by source from valid payments only (using amount_usd)
   const revBySourceMap = new Map<string, number>();
-  for (const p of validPayments) {
+  for (const p of validWithFx) {
     const src = (p as { source: string }).source || "manual";
-    const amt = Number((p as { amount: number }).amount) || 0;
+    const amt = Number((p as { amount_usd: number | null }).amount_usd) || 0;
     revBySourceMap.set(src, (revBySourceMap.get(src) ?? 0) + amt);
   }
   const revenueBySource: Record<string, number> = {};

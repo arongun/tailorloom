@@ -24,12 +24,12 @@ function formatCurrency(value: number): string {
 
 const winBack: InsightCardDefinition = {
   id: "win_back",
-  title: "Win-Back List",
+  title: "Retention",
   description: "Tier A customers past the at-risk threshold — high LTV at stake",
-  category: "Action",
+  category: "Retention",
   metricType: "count",
   thresholds: {},
-  drilldownFilter: { type: "win_back", label: "Win-Back Targets" },
+  drilldownFilter: { type: "win_back", label: "Retention Targets" },
   compute: (
     customers: ComputedCustomer[],
     config: ResolvedConfig
@@ -39,14 +39,14 @@ const winBack: InsightCardDefinition = {
 
     return {
       id: "win_back",
-      title: "Win-Back List",
+      title: "Retention",
       description:
         "Tier A customers past the at-risk threshold — high LTV at stake",
-      category: "Action",
+      category: "Retention",
       primaryValue: `${filtered.length}`,
       secondaryValue: `${formatCurrency(ltvAtStake)} LTV at stake`,
       delta: null,
-      drilldownFilter: { type: "win_back", label: "Win-Back Targets" },
+      drilldownFilter: { type: "win_back", label: "Retention Targets" },
       row: 1,
     };
   },
@@ -54,12 +54,12 @@ const winBack: InsightCardDefinition = {
 
 const oneAndDone: InsightCardDefinition = {
   id: "one_and_done",
-  title: "One-and-Done Risk",
+  title: "Risk",
   description: "Single-purchase customers going cold — convert or lose them",
-  category: "Action",
+  category: "Risk",
   metricType: "count",
   thresholds: {},
-  drilldownFilter: { type: "one_and_done", label: "One-and-Done Risk" },
+  drilldownFilter: { type: "one_and_done", label: "At-Risk Customers" },
   compute: (
     customers: ComputedCustomer[],
     config: ResolvedConfig
@@ -69,14 +69,14 @@ const oneAndDone: InsightCardDefinition = {
 
     return {
       id: "one_and_done",
-      title: "One-and-Done Risk",
+      title: "Risk",
       description:
         "Single-purchase customers going cold — convert or lose them",
-      category: "Action",
+      category: "Risk",
       primaryValue: `${filtered.length}`,
-      secondaryValue: `${formatCurrency(revenue)} in cohort`,
+      secondaryValue: `${formatCurrency(revenue)} in this group`,
       delta: null,
-      drilldownFilter: { type: "one_and_done", label: "One-and-Done Risk" },
+      drilldownFilter: { type: "one_and_done", label: "At-Risk Customers" },
       row: 1,
     };
   },
@@ -84,12 +84,12 @@ const oneAndDone: InsightCardDefinition = {
 
 const newHighValue: InsightCardDefinition = {
   id: "new_high_value",
-  title: "New High-Value",
+  title: "Growth",
   description: "Recently acquired Tier A customers — nurture to retain",
-  category: "Action",
+  category: "Growth",
   metricType: "count",
   thresholds: {},
-  drilldownFilter: { type: "new_high_value", label: "New High-Value" },
+  drilldownFilter: { type: "new_high_value", label: "Growth Customers" },
   compute: (
     customers: ComputedCustomer[],
     config: ResolvedConfig
@@ -99,14 +99,14 @@ const newHighValue: InsightCardDefinition = {
 
     return {
       id: "new_high_value",
-      title: "New High-Value",
+      title: "Growth",
       description:
         "Recently acquired Tier A customers — nurture to retain",
-      category: "Action",
+      category: "Growth",
       primaryValue: `${filtered.length}`,
-      secondaryValue: `${formatCurrency(revenue)} from cohort`,
+      secondaryValue: `${formatCurrency(revenue)} from this group`,
       delta: null,
-      drilldownFilter: { type: "new_high_value", label: "New High-Value" },
+      drilldownFilter: { type: "new_high_value", label: "Growth Customers" },
       row: 1,
     };
   },

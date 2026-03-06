@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   History,
   CreditCard,
@@ -14,6 +14,10 @@ import {
   Undo2,
   Eye,
   Download,
+  Trash2,
+  Users,
+  TrendingUp,
+  RotateCcw,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,8 +52,11 @@ import {
   getImportHistory,
   getImportRows,
   revertImport,
+  deleteImport,
+  resetAllData,
   type ImportHistoryRow,
 } from "@/lib/actions/history";
+import { Checkbox } from "@/components/ui/checkbox";
 import Papa from "papaparse";
 import { CsvViewerSheet } from "@/components/csv-viewer-sheet";
 import type { SourceType } from "@/lib/types";
@@ -90,6 +97,18 @@ const SOURCE_CONFIG: Record<
     icon: Globe,
     color: "text-cyan-700 dark:text-cyan-400",
     bg: "bg-cyan-100 dark:bg-cyan-500/10",
+  },
+  crm: {
+    label: "CRM",
+    icon: Users,
+    color: "text-indigo-700 dark:text-indigo-400",
+    bg: "bg-indigo-100 dark:bg-indigo-500/10",
+  },
+  attribution: {
+    label: "Attribution",
+    icon: TrendingUp,
+    color: "text-rose-700 dark:text-rose-400",
+    bg: "bg-rose-100 dark:bg-rose-500/10",
   },
 };
 
@@ -137,6 +156,14 @@ export default function ImportsPage() {
   const [viewingFileName, setViewingFileName] = useState("");
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState("");
+  const lastSelectedIndex = useRef<number | null>(null);
+
   const fetchImports = useCallback(async () => {
     setLoading(true);
     try {
@@ -160,6 +187,11 @@ export default function ImportsPage() {
   useEffect(() => {
     fetchImports();
   }, [fetchImports]);
+
+  // Reset shift-select anchor on page/filter changes
+  useEffect(() => {
+    lastSelectedIndex.current = null;
+  }, [page, sourceFilter]);
 
   const handleRevert = async (importId: string) => {
     setRevertingId(importId);
@@ -199,6 +231,83 @@ export default function ImportsPage() {
     }
   };
 
+  // Selectable imports (skip processing only — reverted can be deleted)
+  const selectableImports = imports.filter(
+    (imp) => imp.status !== "processing"
+  );
+  const allSelectableIds = new Set(selectableImports.map((imp) => imp.id));
+  const allSelected =
+    selectableImports.length > 0 &&
+    selectableImports.every((imp) => selectedIds.has(imp.id));
+
+  const toggleSelect = (id: string, shiftKey: boolean) => {
+    const currentIndex = imports.findIndex((imp) => imp.id === id);
+
+    if (shiftKey && lastSelectedIndex.current !== null && lastSelectedIndex.current !== currentIndex) {
+      const start = Math.min(lastSelectedIndex.current, currentIndex);
+      const end = Math.max(lastSelectedIndex.current, currentIndex);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (let i = start; i <= end; i++) {
+          if (imports[i].status !== "processing") {
+            next.add(imports[i].id);
+          }
+        }
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    }
+
+    lastSelectedIndex.current = currentIndex;
+  };
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allSelectableIds));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    setIsDeleting(true);
+    try {
+      for (const id of selectedIds) {
+        await deleteImport(id);
+      }
+      toast.success(`${selectedIds.size} import${selectedIds.size > 1 ? "s" : ""} deleted`);
+      setSelectedIds(new Set());
+      fetchImports();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete imports");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleReset = async () => {
+    setIsResetting(true);
+    try {
+      const result = await resetAllData();
+      toast.success(`All data reset — ${result.deleted} imports removed`);
+      setResetDialogOpen(false);
+      setResetConfirmText("");
+      setSelectedIds(new Set());
+      fetchImports();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   return (
@@ -232,11 +341,81 @@ export default function ImportsPage() {
             <SelectItem value="passline">PassLine</SelectItem>
             <SelectItem value="pos">POS</SelectItem>
             <SelectItem value="wetravel">WeTravel</SelectItem>
+            <SelectItem value="crm">CRM</SelectItem>
+            <SelectItem value="attribution">Attribution</SelectItem>
           </SelectContent>
         </Select>
-        <span className="text-[12px] text-text-muted ml-auto">
-          {total} {total === 1 ? "import" : "imports"}
-        </span>
+
+        <div className="flex items-center gap-2 ml-auto">
+          {selectedIds.size > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDeleteSelected}
+              disabled={isDeleting}
+              className="h-8 text-[12px] text-rose-600 border-rose-200 hover:bg-rose-50 dark:text-rose-400 dark:border-rose-500/20 dark:hover:bg-rose-500/10"
+            >
+              {isDeleting ? (
+                <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3 w-3 mr-1.5" />
+              )}
+              Delete selected ({selectedIds.size})
+            </Button>
+          )}
+          <AlertDialog open={resetDialogOpen} onOpenChange={(open) => { setResetDialogOpen(open); if (!open) setResetConfirmText(""); }}>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-[12px] text-text-muted"
+              >
+                <RotateCcw className="h-3 w-3 mr-1.5" />
+                Reset Demo Data
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset all demo data?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently delete all customer data, imports, and derived records. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="mt-2">
+                <label className="text-[13px] text-text-secondary">
+                  Type <span className="font-semibold">reset</span> to confirm
+                </label>
+                <Input
+                  value={resetConfirmText}
+                  onChange={(e) => setResetConfirmText(e.target.value)}
+                  placeholder="reset"
+                  className="mt-1.5 text-[13px]"
+                  autoComplete="off"
+                />
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <Button
+                  disabled={resetConfirmText !== "reset" || isResetting}
+                  onClick={handleReset}
+                  className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50"
+                >
+                  {isResetting ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                      Resetting...
+                    </>
+                  ) : (
+                    "Reset all data"
+                  )}
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <span className="text-[12px] text-text-muted">
+            {total} {total === 1 ? "import" : "imports"}
+          </span>
+        </div>
       </div>
 
       {/* Table */}
@@ -251,10 +430,10 @@ export default function ImportsPage() {
               <History className="h-6 w-6 text-text-muted" />
             </div>
             <p className="text-[14px] font-medium text-text-secondary mb-1">
-              No Imports Yet
+              No imports yet
             </p>
             <p className="text-[13px] text-text-muted text-center max-w-md">
-              Import history will appear here once you upload CSV files.
+              Upload your first dataset to begin
             </p>
           </CardContent>
         ) : (
@@ -262,6 +441,16 @@ export default function ImportsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-[40px]">
+                    <Checkbox
+                      checked={allSelected}
+                      onClick={(e: React.MouseEvent) => {
+                        e.preventDefault();
+                        toggleSelectAll();
+                      }}
+                      aria-label="Select all"
+                    />
+                  </TableHead>
                   <TableHead className="text-[12px]">File</TableHead>
                   <TableHead className="text-[12px]">Source</TableHead>
                   <TableHead className="text-[12px]">Status</TableHead>
@@ -291,13 +480,29 @@ export default function ImportsPage() {
                     imp.status === "completed" && imp.imported_rows > 0;
                   const isReverting = revertingId === imp.id;
 
+                  const isSelectable = imp.status !== "processing";
+
                   return (
                     <TableRow
                       key={imp.id}
                       className={
-                        imp.status === "reverted" ? "opacity-50" : ""
+                        imp.status === "reverted" ? "opacity-60" : ""
                       }
                     >
+                      <TableCell>
+                        {isSelectable ? (
+                          <Checkbox
+                            checked={selectedIds.has(imp.id)}
+                            onClick={(e: React.MouseEvent) => {
+                              e.preventDefault();
+                              toggleSelect(imp.id, e.shiftKey);
+                            }}
+                            aria-label={`Select ${imp.file_name}`}
+                          />
+                        ) : (
+                          <div className="w-4" />
+                        )}
+                      </TableCell>
                       <TableCell className="text-[13px] font-medium text-text-primary max-w-[200px] truncate">
                         {imp.file_name}
                       </TableCell>

@@ -52,7 +52,7 @@ export interface ProfileConfig {
 export type ResolvedConfig = ProfileConfig & { profile_id: string };
 
 // Insight card types
-export type InsightCategory = "Retention" | "Growth" | "Ops" | "Action";
+export type InsightCategory = "Retention" | "Growth" | "Ops" | "Action" | "Risk";
 export type MetricType = "currency" | "percent" | "count";
 
 export interface DrilldownFilter {

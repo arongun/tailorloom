@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { shouldUpdateName } from "@/lib/stitching/matcher";
 import type {
   SourceType,
   ImportHistory,
@@ -90,7 +91,9 @@ const SOURCE_TABLE: Record<string, string> = {
   pos: "payments",
   calendly: "bookings",
   passline: "attendance",
-  wetravel: "payments", // raw_data is the full CSV row in both tables; use payments to avoid dupes
+  wetravel: "payments",
+  crm: "crm_enrichments",
+  attribution: "customer_attribution",
 };
 
 export async function getImportRows(
@@ -330,22 +333,28 @@ export async function resolveConflict(
     .update({ customer_id: keepId })
     .eq("customer_id", removeId);
 
-  // 5. Fill in missing fields on A from B
+  // 5. Fill in missing fields on A from B (with name precedence)
   const { data: customerA } = await admin
     .from("customers")
-    .select("full_name, email, phone")
+    .select("full_name, email, phone, name_source")
     .eq("id", keepId)
     .single();
 
   const { data: customerB } = await admin
     .from("customers")
-    .select("full_name, email, phone")
+    .select("full_name, email, phone, name_source")
     .eq("id", removeId)
     .single();
 
   if (customerA && customerB) {
     const updates: Record<string, string> = {};
-    if (!customerA.full_name && customerB.full_name) updates.full_name = customerB.full_name;
+    // Use name precedence to decide which name to keep
+    if (customerB.full_name) {
+      if (!customerA.full_name || shouldUpdateName(customerA.name_source, customerB.name_source ?? "")) {
+        updates.full_name = customerB.full_name;
+        updates.name_source = customerB.name_source ?? "";
+      }
+    }
     if (!customerA.email && customerB.email) updates.email = customerB.email;
     if (!customerA.phone && customerB.phone) updates.phone = customerB.phone;
 
@@ -410,32 +419,36 @@ export async function revertImport(importId: string): Promise<void> {
   if (imp.status === "reverted") throw new Error("Import already reverted");
   if (imp.status === "processing") throw new Error("Import still processing");
 
-  // 1. Find customers affected by this import (via source data tables)
-  const [paymentsRes, bookingsRes, attendanceRes] = await Promise.all([
-    admin
-      .from("payments")
-      .select("customer_id")
-      .eq("import_id", importId),
-    admin
-      .from("bookings")
-      .select("customer_id")
-      .eq("import_id", importId),
-    admin
-      .from("attendance")
-      .select("customer_id")
-      .eq("import_id", importId),
+  // 1. Find customers affected by this import (via all provenance tables)
+  const [paymentsRes, bookingsRes, attendanceRes, crmRes, attrRes, sourcesRes] = await Promise.all([
+    admin.from("payments").select("customer_id").eq("import_id", importId),
+    admin.from("bookings").select("customer_id").eq("import_id", importId),
+    admin.from("attendance").select("customer_id").eq("import_id", importId),
+    admin.from("crm_enrichments").select("customer_id").eq("import_id", importId),
+    admin.from("customer_attribution").select("customer_id").eq("import_id", importId),
+    admin.from("customer_sources").select("customer_id").eq("import_id", importId),
   ]);
 
   const affectedCustomerIds = new Set<string>();
-  for (const row of [...(paymentsRes.data ?? []), ...(bookingsRes.data ?? []), ...(attendanceRes.data ?? [])]) {
+  for (const row of [
+    ...(paymentsRes.data ?? []),
+    ...(bookingsRes.data ?? []),
+    ...(attendanceRes.data ?? []),
+    ...(crmRes.data ?? []),
+    ...(attrRes.data ?? []),
+    ...(sourcesRes.data ?? []),
+  ]) {
     if (row.customer_id) affectedCustomerIds.add(row.customer_id);
   }
 
-  // 2. Delete source data rows
+  // 2. Delete source data rows + source links from this import
   await Promise.all([
     admin.from("payments").delete().eq("import_id", importId),
     admin.from("bookings").delete().eq("import_id", importId),
     admin.from("attendance").delete().eq("import_id", importId),
+    admin.from("crm_enrichments").delete().eq("import_id", importId),
+    admin.from("customer_attribution").delete().eq("import_id", importId),
+    admin.from("customer_sources").delete().eq("import_id", importId),
   ]);
 
   // 3. Delete stitching conflicts linked to this import
@@ -444,34 +457,18 @@ export async function revertImport(importId: string): Promise<void> {
   // 4. For each affected customer, check if they still have data from other imports
   //    If not, delete the customer and their customer_sources
   if (affectedCustomerIds.size > 0) {
-    const customerIdArr = Array.from(affectedCustomerIds);
+    for (const customerId of affectedCustomerIds) {
+      const [rp, rb, ra, rc, rca, rcs] = await Promise.all([
+        admin.from("payments").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+        admin.from("bookings").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+        admin.from("attendance").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+        admin.from("crm_enrichments").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+        admin.from("customer_attribution").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+        admin.from("customer_sources").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+      ]);
 
-    for (const customerId of customerIdArr) {
-      // Check if this customer has any remaining data
-      const [remainingPayments, remainingBookings, remainingAttendance] =
-        await Promise.all([
-          admin
-            .from("payments")
-            .select("id", { count: "exact", head: true })
-            .eq("customer_id", customerId),
-          admin
-            .from("bookings")
-            .select("id", { count: "exact", head: true })
-            .eq("customer_id", customerId),
-          admin
-            .from("attendance")
-            .select("id", { count: "exact", head: true })
-            .eq("customer_id", customerId),
-        ]);
-
-      const totalRemaining =
-        (remainingPayments.count ?? 0) +
-        (remainingBookings.count ?? 0) +
-        (remainingAttendance.count ?? 0);
-
+      const totalRemaining = (rp.count ?? 0) + (rb.count ?? 0) + (ra.count ?? 0) + (rc.count ?? 0) + (rca.count ?? 0) + (rcs.count ?? 0);
       if (totalRemaining === 0) {
-        // No data left — remove customer and their sources
-        await admin.from("customer_sources").delete().eq("customer_id", customerId);
         await admin.from("stitching_conflicts").delete().or(
           `customer_a_id.eq.${customerId},customer_b_id.eq.${customerId}`
         );
@@ -488,4 +485,115 @@ export async function revertImport(importId: string): Promise<void> {
       completed_at: new Date().toISOString(),
     })
     .eq("id", importId);
+}
+
+// ─── Reset All Data ──────────────────────────────────────
+
+/**
+ * Reset all demo data using a single-transaction RPC.
+ * Deletes everything: attendance, bookings, payments, attribution, CRM enrichments,
+ * customers (with cascading customer_sources), and import_history.
+ */
+export async function resetAllData(): Promise<{ deleted: number }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.rpc("reset_demo_data", {
+    target_org_id: DEFAULT_ORG_ID,
+  });
+
+  if (error) throw new Error(`Reset failed: ${error.message}`);
+
+  return { deleted: data ?? 0 };
+}
+
+// ─── Delete Import ──────────────────────────────────────
+
+/**
+ * Permanently delete an import and all its associated data.
+ * Same cascade as revert, but also hard-deletes the import_history row.
+ */
+export async function deleteImport(importId: string): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const admin = createAdminClient();
+
+  // Verify the import exists
+  const { data: imp, error: fetchError } = await admin
+    .from("import_history")
+    .select("id, status, org_id")
+    .eq("id", importId)
+    .single();
+
+  if (fetchError || !imp) throw new Error("Import not found");
+  if (imp.status === "processing") throw new Error("Import still processing");
+
+  // 1. Find customers affected by this import
+  const [paymentsRes, bookingsRes, attendanceRes, crmRes, attrRes, sourcesRes] = await Promise.all([
+    admin.from("payments").select("customer_id").eq("import_id", importId),
+    admin.from("bookings").select("customer_id").eq("import_id", importId),
+    admin.from("attendance").select("customer_id").eq("import_id", importId),
+    admin.from("crm_enrichments").select("customer_id").eq("import_id", importId),
+    admin.from("customer_attribution").select("customer_id").eq("import_id", importId),
+    admin.from("customer_sources").select("customer_id").eq("import_id", importId),
+  ]);
+
+  const affectedCustomerIds = new Set<string>();
+  for (const row of [
+    ...(paymentsRes.data ?? []),
+    ...(bookingsRes.data ?? []),
+    ...(attendanceRes.data ?? []),
+    ...(crmRes.data ?? []),
+    ...(attrRes.data ?? []),
+    ...(sourcesRes.data ?? []),
+  ]) {
+    if (row.customer_id) affectedCustomerIds.add(row.customer_id);
+  }
+
+  // 2. Delete source data rows + source links
+  await Promise.all([
+    admin.from("payments").delete().eq("import_id", importId),
+    admin.from("bookings").delete().eq("import_id", importId),
+    admin.from("attendance").delete().eq("import_id", importId),
+    admin.from("crm_enrichments").delete().eq("import_id", importId),
+    admin.from("customer_attribution").delete().eq("import_id", importId),
+    admin.from("customer_sources").delete().eq("import_id", importId),
+  ]);
+
+  // 3. Delete stitching conflicts linked to this import
+  await admin.from("stitching_conflicts").delete().eq("import_id", importId);
+
+  // 4. Orphan check — delete customers with no remaining data
+  if (affectedCustomerIds.size > 0) {
+    for (const customerId of affectedCustomerIds) {
+      const [rp, rb, ra, rc, rca, rcs] = await Promise.all([
+        admin.from("payments").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+        admin.from("bookings").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+        admin.from("attendance").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+        admin.from("crm_enrichments").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+        admin.from("customer_attribution").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+        admin.from("customer_sources").select("id", { count: "exact", head: true }).eq("customer_id", customerId),
+      ]);
+
+      const total = (rp.count ?? 0) + (rb.count ?? 0) + (ra.count ?? 0) + (rc.count ?? 0) + (rca.count ?? 0) + (rcs.count ?? 0);
+      if (total === 0) {
+        await admin.from("stitching_conflicts").delete().or(
+          `customer_a_id.eq.${customerId},customer_b_id.eq.${customerId}`
+        );
+        await admin.from("customers").delete().eq("id", customerId);
+      }
+    }
+  }
+
+  // 5. Hard-delete the import_history row
+  await admin.from("import_history").delete().eq("id", importId);
 }

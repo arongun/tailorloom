@@ -42,6 +42,8 @@ const SOURCE_COLORS: Record<string, string> = {
   calendly: "#f97316",
   passline: "#14b8a6",
   manual: "#64748b",
+  crm: "#6366f1",
+  attribution: "#f43f5e",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -51,6 +53,8 @@ const SOURCE_LABELS: Record<string, string> = {
   calendly: "Calendly",
   passline: "PassLine",
   manual: "Manual",
+  crm: "CRM",
+  attribution: "Attribution",
 };
 
 const CATEGORY_STYLES: Record<string, string> = {
@@ -59,8 +63,7 @@ const CATEGORY_STYLES: Record<string, string> = {
   Growth:
     "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
   Ops: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
-  Action:
-    "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400",
+  Risk: "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400",
 };
 
 export function DashboardClient({
@@ -155,7 +158,7 @@ export function DashboardClient({
             Dashboard
           </h1>
           <p className="mt-1 text-[13px] text-text-muted">
-            Revenue overview and customer intelligence
+            Revenue and Customer Intelligence Overview
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -170,7 +173,7 @@ export function DashboardClient({
       {row1.length > 0 && (
         <div className="mb-6">
           <p className="text-[11px] font-medium tracking-widest uppercase text-text-muted mb-3">
-            Action Required
+            Revenue Opportunities
           </p>
           <div className="grid grid-cols-3 gap-4">
             {row1.map((result, idx) => (

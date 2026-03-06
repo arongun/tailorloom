@@ -93,9 +93,9 @@ const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
 // ── Filter option definitions ───────────────────────────────
 
 const SEGMENT_OPTIONS = [
-  { value: "win_back", label: "Win-Back Targets" },
-  { value: "one_and_done", label: "One-and-Done Risk" },
-  { value: "new_high_value", label: "New High-Value" },
+  { value: "win_back", label: "Retention Targets" },
+  { value: "one_and_done", label: "At-Risk Customers" },
+  { value: "new_high_value", label: "Growth Customers" },
   { value: "channel", label: "Channel" },
   { value: "revenue_at_risk", label: "Revenue at Risk (Legacy)" },
   { value: "repeat_customers", label: "Repeat Customers (Legacy)" },

@@ -9,6 +9,16 @@ import { normalizePhone, phonesMatch } from "./phone-utils";
 
 const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
 
+// Name precedence: higher number = higher priority for full_name updates.
+const NAME_SOURCE_PRIORITY: Record<string, number> = {
+  crm: 100, stripe: 80, pos: 60, wetravel: 50, calendly: 50,
+  passline: 50, attribution: 40, manual: 20,
+};
+
+export function shouldUpdateName(currentSource: string | null, incomingSource: string): boolean {
+  return (NAME_SOURCE_PRIORITY[incomingSource] ?? 0) >= (NAME_SOURCE_PRIORITY[currentSource ?? ""] ?? 0);
+}
+
 interface StitchResult {
   customerId: string;
   isNew: boolean;
@@ -435,7 +445,8 @@ export async function stitchIdentity(
   phone: string | null,
   forceCustomerId?: string,
   enrichFields?: { full_name?: string; email?: string; phone?: string },
-  forceNameUpdate?: string
+  forceNameUpdate?: string,
+  importId?: string
 ): Promise<StitchResult> {
   // If user explicitly chose to merge or accept enrichment, skip cascade
   if (forceCustomerId) {
@@ -458,7 +469,8 @@ export async function stitchIdentity(
       source,
       externalId,
       email,
-      name
+      name,
+      importId
     );
     return {
       customerId: forceCustomerId,
@@ -489,19 +501,29 @@ export async function stitchIdentity(
   if (email) {
     const { data: customerByEmail } = await admin
       .from("customers")
-      .select("id")
+      .select("id, full_name, name_source")
       .eq("org_id", DEFAULT_ORG_ID)
       .eq("email", email)
       .maybeSingle();
 
     if (customerByEmail) {
+      // Apply name precedence
+      if (name && (!customerByEmail.full_name || shouldUpdateName(customerByEmail.name_source, source))) {
+        await admin.from("customers").update({
+          full_name: name,
+          name_source: source,
+          updated_at: new Date().toISOString(),
+        }).eq("id", customerByEmail.id);
+      }
+
       await linkSourceToCustomer(
         admin,
         customerByEmail.id,
         source,
         externalId,
         email,
-        name
+        name,
+        importId
       );
       return {
         customerId: customerByEmail.id,
@@ -518,13 +540,30 @@ export async function stitchIdentity(
       .maybeSingle();
 
     if (sourceByEmail) {
+      // Apply name precedence on source-email match too
+      if (name) {
+        const { data: existCust } = await admin
+          .from("customers")
+          .select("full_name, name_source")
+          .eq("id", sourceByEmail.customer_id)
+          .single();
+        if (existCust && (!existCust.full_name || shouldUpdateName(existCust.name_source, source))) {
+          await admin.from("customers").update({
+            full_name: name,
+            name_source: source,
+            updated_at: new Date().toISOString(),
+          }).eq("id", sourceByEmail.customer_id);
+        }
+      }
+
       await linkSourceToCustomer(
         admin,
         sourceByEmail.customer_id,
         source,
         externalId,
         email,
-        name
+        name,
+        importId
       );
       return {
         customerId: sourceByEmail.customer_id,
@@ -555,7 +594,8 @@ export async function stitchIdentity(
           source,
           externalId,
           email,
-          name
+          name,
+          importId
         );
         return {
           customerId: phoneMatches[0].id,
@@ -580,14 +620,15 @@ export async function stitchIdentity(
       const existingCustomer = customersByName[0];
       // Flag conflict if both have emails and they differ
       if (existingCustomer.email && email && existingCustomer.email !== email) {
-        const newCustomerId = await createCustomer(admin, email, name, phone);
+        const newCustomerId = await createCustomer(admin, email, name, phone, source);
         await linkSourceToCustomer(
           admin,
           newCustomerId,
           source,
           externalId,
           email,
-          name
+          name,
+          importId
         );
 
         await flagConflict(
@@ -607,14 +648,15 @@ export async function stitchIdentity(
   }
 
   // 5. No match — create new customer
-  const newCustomerId = await createCustomer(admin, email, name, phone);
+  const newCustomerId = await createCustomer(admin, email, name, phone, source);
   await linkSourceToCustomer(
     admin,
     newCustomerId,
     source,
     externalId,
     email,
-    name
+    name,
+    importId
   );
 
   return { customerId: newCustomerId, isNew: true, matchedBy: "none" };
@@ -627,7 +669,8 @@ async function createCustomer(
   admin: SupabaseClient,
   email: string | null,
   name: string | null,
-  phone?: string | null
+  phone?: string | null,
+  source?: string
 ): Promise<string> {
   const { data, error } = await admin
     .from("customers")
@@ -636,6 +679,7 @@ async function createCustomer(
       email,
       full_name: name,
       phone: phone ?? null,
+      name_source: name ? (source ?? null) : null,
     })
     .select("id")
     .single();
@@ -681,7 +725,7 @@ async function enrichCustomer(
 
 /**
  * Link a source (external ID) to a customer via customer_sources.
- * Uses upsert on (source, external_id) to prevent duplicates.
+ * Uses insert-then-update to preserve original import_id provenance.
  */
 async function linkSourceToCustomer(
   admin: SupabaseClient,
@@ -689,20 +733,27 @@ async function linkSourceToCustomer(
   source: SourceType,
   externalId: string,
   email: string | null,
-  name: string | null
+  name: string | null,
+  importId?: string
 ): Promise<void> {
-  const { error } = await admin.from("customer_sources").upsert(
-    {
-      customer_id: customerId,
-      source,
-      external_id: externalId,
-      external_email: email,
-      external_name: name,
-    },
-    { onConflict: "source,external_id" }
-  );
+  const { error } = await admin.from("customer_sources").insert({
+    customer_id: customerId,
+    source,
+    external_id: externalId,
+    external_email: email,
+    external_name: name,
+    import_id: importId ?? null,
+  });
 
-  if (error) {
+  if (error?.code === "23505") {
+    // Conflict on (source, external_id) — update email/name only.
+    // PRESERVE original import_id to maintain "first import" provenance.
+    await admin
+      .from("customer_sources")
+      .update({ external_email: email, external_name: name })
+      .eq("source", source)
+      .eq("external_id", externalId);
+  } else if (error) {
     console.error(`Failed to link source: ${error.message}`);
   }
 }
@@ -733,6 +784,125 @@ async function flagConflict(
   if (error) {
     console.error(`Failed to flag conflict: ${error.message}`);
   }
+}
+
+/**
+ * Match a CRM row to an existing or new customer.
+ * Cascade: email → phone → member_id (via POS customer_sources) → create new
+ * Does NOT write to customer_sources (CRM doesn't use source links).
+ */
+export async function matchCRMCustomer(
+  admin: SupabaseClient,
+  email: string | null,
+  phone: string | null,
+  memberId: string | null,
+  name: string | null
+): Promise<{ customerId: string; isNew: boolean }> {
+  // 1. Email lookup
+  if (email) {
+    const { data } = await admin
+      .from("customers")
+      .select("id")
+      .eq("org_id", DEFAULT_ORG_ID)
+      .eq("email", email)
+      .maybeSingle();
+    if (data) return { customerId: data.id, isNew: false };
+  }
+
+  // 2. Phone lookup
+  if (phone) {
+    const normalizedPhone = normalizePhone(phone);
+    if (normalizedPhone) {
+      const { data: customersByPhone } = await admin
+        .from("customers")
+        .select("id, phone")
+        .eq("org_id", DEFAULT_ORG_ID)
+        .not("phone", "is", null);
+
+      if (customersByPhone) {
+        const phoneMatches = customersByPhone.filter((c) =>
+          phonesMatch(c.phone, phone)
+        );
+        if (phoneMatches.length === 1) {
+          return { customerId: phoneMatches[0].id, isNew: false };
+        }
+      }
+    }
+  }
+
+  // 3. Member ID lookup (reuse existing POS membership links)
+  if (memberId) {
+    const { data } = await admin
+      .from("customer_sources")
+      .select("customer_id")
+      .eq("source", "pos")
+      .eq("external_id", memberId)
+      .maybeSingle();
+    if (data) return { customerId: data.customer_id, isNew: false };
+  }
+
+  // 4. No match — create new customer
+  const customerId = await createCustomer(admin, email, name, phone);
+  return { customerId, isNew: true };
+}
+
+/**
+ * Match an attribution row to an existing or new customer.
+ * Cascade: email → phone → create new
+ * Does NOT write to customer_sources.
+ * Attribution has lowest priority — only updates name if shouldUpdateName allows it.
+ */
+export async function matchAttributionCustomer(
+  admin: SupabaseClient,
+  email: string | null,
+  phone: string | null,
+  name: string | null = null
+): Promise<{ customerId: string; isNew: boolean }> {
+  // 1. Email lookup
+  if (email) {
+    const { data } = await admin
+      .from("customers")
+      .select("id, full_name, name_source")
+      .eq("org_id", DEFAULT_ORG_ID)
+      .eq("email", email)
+      .maybeSingle();
+    if (data) {
+      // Attribution has low priority — only update if shouldUpdateName allows
+      if (name && (!data.full_name || shouldUpdateName(data.name_source, "attribution"))) {
+        await admin.from("customers").update({
+          full_name: name,
+          name_source: "attribution",
+          updated_at: new Date().toISOString(),
+        }).eq("id", data.id);
+      }
+      return { customerId: data.id, isNew: false };
+    }
+  }
+
+  // 2. Phone lookup
+  if (phone) {
+    const normalizedPhone = normalizePhone(phone);
+    if (normalizedPhone) {
+      const { data: customersByPhone } = await admin
+        .from("customers")
+        .select("id, phone")
+        .eq("org_id", DEFAULT_ORG_ID)
+        .not("phone", "is", null);
+
+      if (customersByPhone) {
+        const phoneMatches = customersByPhone.filter((c) =>
+          phonesMatch(c.phone, phone)
+        );
+        if (phoneMatches.length === 1) {
+          return { customerId: phoneMatches[0].id, isNew: false };
+        }
+      }
+    }
+  }
+
+  // 3. No match — create new customer
+  const customerId = await createCustomer(admin, email, name, phone, "attribution");
+  return { customerId, isNew: true };
 }
 
 /**

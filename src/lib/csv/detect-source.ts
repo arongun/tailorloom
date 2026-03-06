@@ -1,9 +1,9 @@
 import { SCHEMAS } from "./schemas";
 import { generateMappingSuggestions } from "./heuristic-mapper";
-import type { SourceType } from "@/lib/types";
+import type { SchemaKey } from "@/lib/types";
 
 export interface DetectionResult {
-  source: SourceType;
+  source: SchemaKey;
   confidence: number;
   mappedCount: number;
   requiredMapped: number;
@@ -52,7 +52,7 @@ export function detectSource(
       avgConfidence * 0.4 + coverage * 0.2 + requiredCoverage * 0.4;
 
     results.push({
-      source: key as SourceType,
+      source: key as SchemaKey,
       confidence,
       mappedCount: mapped.length,
       requiredMapped,

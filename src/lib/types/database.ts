@@ -1,7 +1,7 @@
 // Database types matching the Supabase schema
 // These will be replaced by auto-generated types from `supabase gen types` once the schema is live
 
-export type SourceType = "stripe" | "calendly" | "passline" | "pos" | "wetravel" | "manual";
+export type SourceType = "stripe" | "calendly" | "passline" | "pos" | "wetravel" | "manual" | "crm" | "attribution";
 export type ImportStatus = "pending" | "processing" | "completed" | "failed" | "skipped" | "reverted";
 export type PaymentStatus = "succeeded" | "pending" | "failed" | "refunded" | "approved" | "void";
 export type BookingStatus = "scheduled" | "completed" | "cancelled" | "no_show" | "confirmed" | "rescheduled";
@@ -22,6 +22,17 @@ export interface Customer {
   phone: string | null;
   country: string | null;
   notes: string | null;
+  last_visit_date: string | null;
+  classes_remaining: number | null;
+  membership_status: string | null;
+  referral_source: string | null;
+  occupation: string | null;
+  skill_level: string | null;
+  member_type: string | null;
+  join_date: string | null;
+  preferred_currency: string | null;
+  preferred_time_slot: string | null;
+  name_source: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +44,7 @@ export interface CustomerSource {
   external_id: string;
   external_email: string | null;
   external_name: string | null;
+  import_id: string | null;
   raw_data: Record<string, unknown> | null;
   created_at: string;
 }
@@ -75,6 +87,10 @@ export interface Payment {
   status: PaymentStatus;
   payment_date: string;
   payment_type: string | null;
+  amount_usd: number | null;
+  fx_rate: number | null;
+  fx_rate_date: string | null;
+  fx_source: string | null;
   raw_data: Record<string, unknown> | null;
   created_at: string;
 }
@@ -159,4 +175,71 @@ export interface StitchingConflict {
   resolved_at: string | null;
   import_id: string | null;
   created_at: string;
+}
+
+export interface CrmEnrichment {
+  id: string;
+  org_id: string;
+  customer_id: string;
+  import_id: string | null;
+  enriched_fields: Record<string, unknown>;
+  raw_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface CustomerAttribution {
+  id: string;
+  org_id: string;
+  customer_id: string;
+  import_id: string | null;
+  attribution_type: string | null;
+  // Shared fields
+  conversion_id: string | null;
+  conversion_source: string | null;
+  full_name: string | null;
+  product: string | null;
+  revenue_usd: number | null;
+  conversion_date: string | null;
+  first_touch_channel: string | null;
+  referral_source: string | null;
+  campaign: string | null;
+  acquisition_date: string | null;
+  // Summary-specific (first-touch)
+  n_touchpoints: number | null;
+  journey_span_days: number | null;
+  first_touch_utm_source: string | null;
+  first_touch_utm_medium: string | null;
+  first_touch_campaign: string | null;
+  first_touch_referrer: string | null;
+  first_touch_date: string | null;
+  last_touch_channel: string | null;
+  last_touch_utm_source: string | null;
+  last_touch_date: string | null;
+  attributed_revenue_usd: number | null;
+  // Touchpoint-specific (journeys)
+  touch_id: string | null;
+  touch_number: number | null;
+  total_touches: number | null;
+  touch_position: string | null;
+  channel: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  referrer: string | null;
+  touch_date: string | null;
+  days_before_conversion: number | null;
+  first_touch_credit: number | null;
+  first_touch_revenue: number | null;
+  raw_data: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface FxRate {
+  id: string;
+  rate_date: string;
+  base_currency: string;
+  quote_currency: string;
+  rate: number;
+  source: string;
+  fetched_at: string;
 }

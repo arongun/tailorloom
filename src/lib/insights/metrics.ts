@@ -122,7 +122,7 @@ export async function computeAllCustomerMetrics(
         .eq("org_id", DEFAULT_ORG_ID),
       admin
         .from("payments")
-        .select("customer_id, amount, payment_date, source")
+        .select("customer_id, amount, amount_usd, payment_date, source")
         .eq("org_id", DEFAULT_ORG_ID)
         .in("status", ["succeeded", "approved"]),
       admin
@@ -155,6 +155,7 @@ export async function computeAllCustomerMetrics(
   >();
   for (const p of payments) {
     if (!p.customer_id) continue;
+    if (p.amount_usd == null) continue; // Skip payments without FX conversion
     const agg = paymentAgg.get(p.customer_id) ?? {
       total: 0,
       count: 0,
@@ -162,7 +163,7 @@ export async function computeAllCustomerMetrics(
       firstDate: null,
       bySource: new Map(),
     };
-    const amount = Number(p.amount) || 0;
+    const amount = Number(p.amount_usd) || 0;
     agg.total += amount;
     agg.count += 1;
     agg.lastDate = maxDate(agg.lastDate, p.payment_date);

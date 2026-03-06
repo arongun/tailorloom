@@ -1,5 +1,9 @@
 import type { SourceType } from "./database";
 
+/** Internal schema key — extends SourceType with attribution sub-types.
+ *  Used ONLY for schema detection / mapping. Never written to DB. */
+export type SchemaKey = SourceType | "attribution_firsttouch" | "attribution_journeys";
+
 export interface SchemaField {
   key: string;
   label: string;
@@ -12,7 +16,7 @@ export interface SchemaField {
 }
 
 export interface SourceSchema {
-  source: SourceType;
+  source: SourceType | SchemaKey;
   label: string;
   fields: SchemaField[];
   idField: string;

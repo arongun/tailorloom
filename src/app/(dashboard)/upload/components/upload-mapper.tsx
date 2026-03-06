@@ -16,7 +16,8 @@ import {
   Ticket,
   ShoppingCart,
   Plane,
-  Download,
+  Users,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,11 +34,12 @@ import {
   generateMappingSuggestions,
   suggestionsToMapping,
 } from "@/lib/csv/heuristic-mapper";
-import { getSchema } from "@/lib/csv/schemas";
+import { getSchema, schemaKeyToSourceType, detectAttributionSubtype } from "@/lib/csv/schemas";
 import { detectSource, isConfidentDetection } from "@/lib/csv/detect-source";
 import { getSavedMappings } from "@/lib/actions/mappings";
 import type {
   SourceType,
+  SchemaKey,
   SourceSchema,
   MappingSuggestion,
   SavedMapping,
@@ -47,9 +49,22 @@ import type { MapperRestoredData } from "@/lib/upload-session";
 
 // ─── Types ───────────────────────────────────────────────────
 
+export interface MultiFileEntry {
+  file: File;
+  content: string;
+  source: SourceType | null;
+  schemaKey?: SchemaKey;
+  headers: string[];
+  totalRows: number;
+  needsSourcePick: boolean;
+  detectionResults: DetectionResult[];
+  mapping?: Record<string, string>;
+}
+
 interface UploadMapperProps {
   onReady: (data: {
     source: SourceType;
+    schemaKey?: SchemaKey;
     file: File;
     content: string;
     mapping: Record<string, string>;
@@ -63,6 +78,7 @@ interface UploadMapperProps {
     mapping: Record<string, string>,
     headers: string[]
   ) => void;
+  onMultipleFiles?: (entries: MultiFileEntry[]) => void;
   initialData?: MapperRestoredData | null;
 }
 
@@ -86,6 +102,10 @@ const SOURCE_META: Record<
   passline: { label: "PassLine", icon: Ticket, color: "text-emerald-500" },
   pos: { label: "POS", icon: ShoppingCart, color: "text-orange-500" },
   wetravel: { label: "WeTravel", icon: Plane, color: "text-cyan-500" },
+  crm: { label: "CRM / Members", icon: Users, color: "text-indigo-500" },
+  attribution: { label: "Attribution", icon: TrendingUp, color: "text-rose-500" },
+  attribution_firsttouch: { label: "Attribution (First Touch)", icon: TrendingUp, color: "text-rose-500" },
+  attribution_journeys: { label: "Attribution (Journeys)", icon: TrendingUp, color: "text-rose-500" },
 };
 
 function SourcePicker({
@@ -93,8 +113,13 @@ function SourcePicker({
   onSelect,
 }: {
   results: DetectionResult[];
-  onSelect: (source: SourceType) => void;
+  onSelect: (source: SourceType | SchemaKey) => void;
 }) {
+  const crmMeta = SOURCE_META.crm;
+  const CrmIcon = crmMeta.icon;
+  const attrMeta = SOURCE_META.attribution;
+  const AttrIcon = attrMeta.icon;
+
   return (
     <div className="rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/40 dark:bg-amber-500/5 p-4 space-y-3">
       <div className="flex items-center gap-2">
@@ -103,24 +128,46 @@ function SourcePicker({
           Couldn&apos;t confidently detect the source type. Which is it?
         </p>
       </div>
-      <div className="flex gap-2">
-        {results.map((r) => {
-          const meta = SOURCE_META[r.source];
-          const Icon = meta.icon;
-          return (
-            <button
-              key={r.source}
-              onClick={() => onSelect(r.source)}
-              className="flex items-center gap-2 rounded-lg border border-amber-200 bg-surface px-3 py-2 text-[12px] font-medium text-text-secondary hover:border-border-default hover:shadow-sm transition-all"
-            >
-              <Icon className={cn("h-4 w-4", meta.color)} strokeWidth={1.8} />
-              {meta.label}
-              <span className="text-[10px] text-text-muted">
-                {Math.round(r.confidence * 100)}%
-              </span>
-            </button>
-          );
-        })}
+      {results.length > 0 && (
+        <div className="flex gap-2 flex-wrap">
+          {results.map((r) => {
+            const meta = SOURCE_META[r.source];
+            if (!meta) return null;
+            const Icon = meta.icon;
+            return (
+              <button
+                key={r.source}
+                onClick={() => onSelect(r.source)}
+                className="flex items-center gap-2 rounded-lg border border-amber-200 bg-surface px-3 py-2 text-[12px] font-medium text-text-secondary hover:border-border-default hover:shadow-sm transition-all"
+              >
+                <Icon className={cn("h-4 w-4", meta.color)} strokeWidth={1.8} />
+                {meta.label}
+                <span className="text-[10px] text-text-muted">
+                  {Math.round(r.confidence * 100)}%
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <div className="border-t border-amber-200 dark:border-amber-500/20 pt-3">
+        <p className="text-[11px] text-text-muted mb-2">Or choose a data type:</p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onSelect("crm")}
+            className="flex items-center gap-2 rounded-lg border border-border-default bg-surface px-3 py-2 text-[12px] font-medium text-text-secondary hover:border-border-default hover:shadow-sm transition-all"
+          >
+            <CrmIcon className={cn("h-4 w-4", crmMeta.color)} strokeWidth={1.8} />
+            {crmMeta.label}
+          </button>
+          <button
+            onClick={() => onSelect("attribution")}
+            className="flex items-center gap-2 rounded-lg border border-border-default bg-surface px-3 py-2 text-[12px] font-medium text-text-secondary hover:border-border-default hover:shadow-sm transition-all"
+          >
+            <AttrIcon className={cn("h-4 w-4", attrMeta.color)} strokeWidth={1.8} />
+            {attrMeta.label}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -269,6 +316,7 @@ export function UploadMapper({
   onReady,
   onClear,
   onSaveTemplate,
+  onMultipleFiles,
   initialData,
 }: UploadMapperProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -303,7 +351,10 @@ export function UploadMapper({
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [templateName, setTemplateName] = useState("");
 
-  const schema = detectedSource ? getSchema(detectedSource) : null;
+  // Attribution sub-type tracking
+  const [resolvedSchemaKey, setResolvedSchemaKey] = useState<SchemaKey | undefined>();
+
+  const schema = resolvedSchemaKey ? getSchema(resolvedSchemaKey) : (detectedSource ? getSchema(detectedSource) : null);
 
   // Confidence map
   const confidenceMap = useMemo(() => {
@@ -373,6 +424,7 @@ export function UploadMapper({
     ) {
       onReady({
         source: detectedSource,
+        schemaKey: resolvedSchemaKey,
         file,
         content: fileContent,
         mapping,
@@ -385,6 +437,7 @@ export function UploadMapper({
     file,
     fileContent,
     detectedSource,
+    resolvedSchemaKey,
     headers,
     totalRows,
     onReady,
@@ -394,9 +447,15 @@ export function UploadMapper({
 
   const applySource = useCallback(
     async (source: SourceType, hdrs: string[], samples: Record<string, string>[]) => {
+      // For attribution, resolve sub-type from headers
+      let effectiveKey: SchemaKey = source;
+      if (source === "attribution") {
+        effectiveKey = detectAttributionSubtype(hdrs);
+      }
+      setResolvedSchemaKey(effectiveKey);
       setDetectedSource(source);
 
-      const s = getSchema(source)!;
+      const s = getSchema(effectiveKey) ?? getSchema(source)!;
       const suggs = generateMappingSuggestions(hdrs, s, samples);
       setSuggestions(suggs);
       setMapping(suggestionsToMapping(suggs));
@@ -455,8 +514,10 @@ export function UploadMapper({
       setDetectionResults(results);
 
       if (isConfidentDetection(results)) {
-        // Auto-select
-        await applySource(results[0].source, parsed.headers, parsed.sampleRows);
+        // Auto-select — map SchemaKey back to SourceType
+        const detectedKey = results[0].source;
+        const dbSource = (detectedKey.startsWith("attribution") ? "attribution" : detectedKey) as SourceType;
+        await applySource(dbSource, parsed.headers, parsed.sampleRows);
       } else {
         // Need user to pick
         setNeedsSourcePick(true);
@@ -465,14 +526,65 @@ export function UploadMapper({
     [applySource]
   );
 
+  const processMultipleFiles = useCallback(
+    async (files: File[]) => {
+      const entries: MultiFileEntry[] = [];
+      for (const f of files) {
+        if (!f.name.toLowerCase().endsWith(".csv")) continue;
+        if (f.size > 10 * 1024 * 1024) continue;
+
+        const content = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = () => reject(new Error("Failed to read file"));
+          reader.readAsText(f);
+        });
+
+        if (!content?.trim()) continue;
+
+        const parsed = parseCSVContent(content);
+        const results = detectSource(parsed.headers, parsed.sampleRows);
+        const confident = isConfidentDetection(results);
+
+        // Map SchemaKey back to SourceType for DB writes
+        const detectedKey = confident ? results[0].source : null;
+        const dbSource = detectedKey ? (detectedKey.startsWith("attribution") ? "attribution" : detectedKey) as SourceType : null;
+
+        entries.push({
+          file: f,
+          content,
+          source: dbSource,
+          schemaKey: detectedKey ?? undefined,
+          headers: parsed.headers,
+          totalRows: parsed.totalRows,
+          needsSourcePick: !confident,
+          detectionResults: results,
+        });
+      }
+      return entries;
+    },
+    []
+  );
+
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragging(false);
-      const f = e.dataTransfer.files[0];
+
+      const files = Array.from(e.dataTransfer.files).filter((f) =>
+        f.name.toLowerCase().endsWith(".csv")
+      );
+
+      if (files.length > 1 && onMultipleFiles) {
+        const entries = await processMultipleFiles(files);
+        if (entries.length > 0) onMultipleFiles(entries);
+        return;
+      }
+
+      const f = files[0];
       if (f) processFile(f);
     },
-    [processFile]
+    [processFile, processMultipleFiles, onMultipleFiles]
   );
 
   const clearFile = () => {
@@ -493,9 +605,11 @@ export function UploadMapper({
     onClear();
   };
 
-  const handleSourcePick = async (source: SourceType) => {
+  const handleSourcePick = async (source: SourceType | SchemaKey) => {
     setNeedsSourcePick(false);
-    await applySource(source, headers, sampleRows);
+    // For attribution sub-types detected by the source detector, resolve to base SourceType
+    const dbSource = (source.startsWith("attribution") ? "attribution" : source) as SourceType;
+    await applySource(dbSource, headers, sampleRows);
   };
 
   // ─── Mapping handling ────────────────────────────────────
@@ -567,15 +681,15 @@ export function UploadMapper({
             </div>
             <p className="mt-4 text-[13px] font-medium text-text-secondary">
               {isDragging
-                ? "Drop your file here"
-                : "Drag & drop a CSV from Stripe, Calendly, PassLine, POS, or WeTravel"}
+                ? "Drop your file(s) here"
+                : "Drag & drop CSV exports from your systems"}
             </p>
             <p className="mt-1 text-[12px] text-text-muted">
               or{" "}
               <span className="font-medium text-text-muted underline underline-offset-2">
                 browse files
               </span>{" "}
-              — source type is auto-detected
+              — drop multiple files to batch import
             </p>
           </div>
         </div>
@@ -583,8 +697,15 @@ export function UploadMapper({
           ref={inputRef}
           type="file"
           accept=".csv"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
+          multiple
+          onChange={async (e) => {
+            const files = Array.from(e.target.files ?? []);
+            if (files.length > 1 && onMultipleFiles) {
+              const entries = await processMultipleFiles(files);
+              if (entries.length > 0) onMultipleFiles(entries);
+              return;
+            }
+            const f = files[0];
             if (f) processFile(f);
           }}
           className="hidden"
@@ -594,50 +715,10 @@ export function UploadMapper({
             {fileError}
           </p>
         )}
-        {/* Sample CSVs */}
-        <div className="mt-4 flex items-center justify-center gap-4 flex-wrap">
-          <span className="text-[11px] text-text-muted">Try a sample:</span>
-          <a
-            href="/samples/stripe_dummy.csv"
-            download
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
-          >
-            <Download className="h-3 w-3" />
-            Stripe
-          </a>
-          <a
-            href="/samples/calendly_dummy.csv"
-            download
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
-          >
-            <Download className="h-3 w-3" />
-            Calendly
-          </a>
-          <a
-            href="/samples/passline_dummy.csv"
-            download
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
-          >
-            <Download className="h-3 w-3" />
-            PassLine
-          </a>
-          <a
-            href="/samples/costco_pos_dummy.csv"
-            download
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
-          >
-            <Download className="h-3 w-3" />
-            POS
-          </a>
-          <a
-            href="/samples/wetravel_dummy.csv"
-            download
-            className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
-          >
-            <Download className="h-3 w-3" />
-            WeTravel
-          </a>
-        </div>
+        {/* Supported sources */}
+        <p className="mt-4 text-center text-[11px] text-text-muted">
+          Stripe &bull; Square &bull; Mindbody &bull; Calendly &bull; WeTravel &bull; POS exports &middot; Multiple files supported
+        </p>
       </div>
     );
   }
