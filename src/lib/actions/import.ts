@@ -16,10 +16,9 @@ import {
   previewStitchIdentity,
   checkDuplicateRow,
   matchCRMCustomer,
-  matchAttributionCustomer,
   shouldUpdateName,
 } from "@/lib/stitching/matcher";
-import { normalizePhone, phonesMatch } from "@/lib/stitching/phone-utils";
+import { normalizePhone } from "@/lib/stitching/phone-utils";
 import { resolveRates, toUSD } from "@/lib/fx";
 import type {
   SourceType,
@@ -292,6 +291,7 @@ export async function previewStitching(options: {
       newCustomers: newCount,
       duplicateRows: duplicateCount,
       enrichments: enrichmentCount,
+      flaggedCount: 0,
       totalValidRows: totalValid,
     },
     uncertainRows,
@@ -300,6 +300,7 @@ export async function previewStitching(options: {
     newRows,
     duplicateRows,
     enrichmentRows,
+    flaggedRows: [],
     warnings: allWarnings.slice(0, 50),
   };
 }
@@ -307,6 +308,7 @@ export async function previewStitching(options: {
 /**
  * Preview CRM stitching: read-only lookup per row to count matches vs new.
  * Returns summary counts only (no row arrays) for multi-file batch preview.
+ * Uses preloaded in-memory indexes for O(1) DB round-trips per file.
  */
 export async function previewCRMStitching(options: {
   content: string;
@@ -322,62 +324,77 @@ export async function previewCRMStitching(options: {
 
   const parsed = parseCSVContent(options.content);
 
+  // Preload all customers and POS sources in 2 queries total
+  const [customersRes, posSourcesRes] = await Promise.all([
+    admin
+      .from("customers")
+      .select("id, email, phone")
+      .eq("org_id", DEFAULT_ORG_ID),
+    admin
+      .from("customer_sources")
+      .select("external_id, customer_id")
+      .eq("source", "pos"),
+  ]);
+
+  // Build in-memory indexes
+  const emailSet = new Set<string>();
+  const normalizedPhoneSet = new Set<string>();
+  const memberIdSet = new Set<string>();
+
+  if (customersRes.data) {
+    for (const c of customersRes.data) {
+      if (c.email) emailSet.add(c.email.trim().toLowerCase());
+      if (c.phone) {
+        const norm = normalizePhone(c.phone);
+        if (norm) normalizedPhoneSet.add(norm);
+      }
+    }
+  }
+
+  if (posSourcesRes.data) {
+    for (const s of posSourcesRes.data) {
+      if (s.external_id) memberIdSet.add(s.external_id);
+    }
+  }
+
   let confidentCount = 0;
   let newCount = 0;
   let totalValid = 0;
-  let errorCount = 0;
 
   for (let i = 0; i < parsed.rows.length; i++) {
     const rawRow = parsed.rows[i];
     const mapped = applyMapping(rawRow, options.mapping);
     const { errors: rowErrors } = validateMappedRow(mapped, schema, i + 1);
-    if (rowErrors.length > 0) { errorCount++; continue; }
+    if (rowErrors.length > 0) continue;
 
     const email = mapped.email ?? null;
     const phone = mapped.phone ?? null;
     const memberId = mapped.member_id ?? null;
 
     // Identifier guardrail — matches import-time check
-    if (!email && !phone && !memberId) { errorCount++; continue; }
+    if (!email && !phone && !memberId) continue;
 
     totalValid++;
 
-    // Email lookup
-    if (email) {
-      const { data } = await admin
-        .from("customers")
-        .select("id")
-        .eq("org_id", "00000000-0000-0000-0000-000000000001")
-        .eq("email", email)
-        .maybeSingle();
-      if (data) { confidentCount++; continue; }
+    // Email lookup (in-memory)
+    if (email && emailSet.has(email.trim().toLowerCase())) {
+      confidentCount++;
+      continue;
     }
 
-    // Phone lookup
+    // Phone lookup (in-memory)
     if (phone) {
       const normalized = normalizePhone(phone);
-      if (normalized) {
-        const { data: phoneCustomers } = await admin
-          .from("customers")
-          .select("id, phone")
-          .eq("org_id", "00000000-0000-0000-0000-000000000001")
-          .not("phone", "is", null);
-        if (phoneCustomers) {
-          const matches = phoneCustomers.filter((c) => phonesMatch(c.phone, phone));
-          if (matches.length === 1) { confidentCount++; continue; }
-        }
+      if (normalized && normalizedPhoneSet.has(normalized)) {
+        confidentCount++;
+        continue;
       }
     }
 
-    // Member ID lookup (POS source)
-    if (memberId) {
-      const { data } = await admin
-        .from("customer_sources")
-        .select("customer_id")
-        .eq("source", "pos")
-        .eq("external_id", memberId)
-        .maybeSingle();
-      if (data) { confidentCount++; continue; }
+    // Member ID lookup (in-memory)
+    if (memberId && memberIdSet.has(memberId)) {
+      confidentCount++;
+      continue;
     }
 
     newCount++;
@@ -391,6 +408,7 @@ export async function previewCRMStitching(options: {
       newCustomers: newCount,
       duplicateRows: 0,
       enrichments: 0,
+      flaggedCount: 0,
       totalValidRows: totalValid,
     },
     uncertainRows: [],
@@ -399,6 +417,7 @@ export async function previewCRMStitching(options: {
     newRows: [],
     duplicateRows: [],
     enrichmentRows: [],
+    flaggedRows: [],
     warnings: [],
   };
 }
@@ -406,6 +425,7 @@ export async function previewCRMStitching(options: {
 /**
  * Preview Attribution stitching: read-only lookup per row to count matches vs new.
  * Returns summary counts only (no row arrays) for multi-file batch preview.
+ * Uses preloaded in-memory indexes for O(1) DB round-trips per file.
  */
 export async function previewAttributionStitching(options: {
   content: string;
@@ -421,49 +441,56 @@ export async function previewAttributionStitching(options: {
 
   const parsed = parseCSVContent(options.content);
 
+  // Preload all customers in 1 query
+  const { data: customers } = await admin
+    .from("customers")
+    .select("id, email, phone")
+    .eq("org_id", DEFAULT_ORG_ID);
+
+  // Build in-memory indexes
+  const emailSet = new Set<string>();
+  const normalizedPhoneSet = new Set<string>();
+
+  if (customers) {
+    for (const c of customers) {
+      if (c.email) emailSet.add(c.email.trim().toLowerCase());
+      if (c.phone) {
+        const norm = normalizePhone(c.phone);
+        if (norm) normalizedPhoneSet.add(norm);
+      }
+    }
+  }
+
   let confidentCount = 0;
   let newCount = 0;
   let totalValid = 0;
-  let errorCount = 0;
 
   for (let i = 0; i < parsed.rows.length; i++) {
     const rawRow = parsed.rows[i];
     const mapped = applyMapping(rawRow, options.mapping);
     const { errors: rowErrors } = validateMappedRow(mapped, schema, i + 1);
-    if (rowErrors.length > 0) { errorCount++; continue; }
+    if (rowErrors.length > 0) continue;
 
     const email = mapped.email ?? null;
     const phone = mapped.phone ?? null;
 
     // Identifier guardrail — matches import-time check
-    if (!email && !phone) { errorCount++; continue; }
+    if (!email && !phone) continue;
 
     totalValid++;
 
-    // Email lookup
-    if (email) {
-      const { data } = await admin
-        .from("customers")
-        .select("id")
-        .eq("org_id", "00000000-0000-0000-0000-000000000001")
-        .eq("email", email)
-        .maybeSingle();
-      if (data) { confidentCount++; continue; }
+    // Email lookup (in-memory)
+    if (email && emailSet.has(email.trim().toLowerCase())) {
+      confidentCount++;
+      continue;
     }
 
-    // Phone lookup
+    // Phone lookup (in-memory)
     if (phone) {
       const normalized = normalizePhone(phone);
-      if (normalized) {
-        const { data: phoneCustomers } = await admin
-          .from("customers")
-          .select("id, phone")
-          .eq("org_id", "00000000-0000-0000-0000-000000000001")
-          .not("phone", "is", null);
-        if (phoneCustomers) {
-          const matches = phoneCustomers.filter((c) => phonesMatch(c.phone, phone));
-          if (matches.length === 1) { confidentCount++; continue; }
-        }
+      if (normalized && normalizedPhoneSet.has(normalized)) {
+        confidentCount++;
+        continue;
       }
     }
 
@@ -478,6 +505,7 @@ export async function previewAttributionStitching(options: {
       newCustomers: newCount,
       duplicateRows: 0,
       enrichments: 0,
+      flaggedCount: 0,
       totalValidRows: totalValid,
     },
     uncertainRows: [],
@@ -486,7 +514,585 @@ export async function previewAttributionStitching(options: {
     newRows: [],
     duplicateRows: [],
     enrichmentRows: [],
+    flaggedRows: [],
     warnings: [],
+  };
+}
+
+/**
+ * Fast in-memory stitch preview: preloads customer data in 2 parallel queries
+ * (customers + customer_sources), then a follow-up for duplicate-check data.
+ * Replicates the previewStitchIdentity cascade entirely in-memory.
+ * Used by both single-file and multi-file flows.
+ *
+ * Flags rows with validation errors or no usable identifiers as "flagged"
+ * instead of silently dropping them. Identifier guardrails are source-aware:
+ * CRM requires email/phone/member_id, attribution requires email/phone,
+ * transaction sources use the full stitch cascade.
+ */
+export async function previewStitchingFast(options: {
+  source: SourceType;
+  content: string;
+  mapping: Record<string, string>;
+}): Promise<StitchPreviewResult> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
+  const admin = createAdminClient();
+  const schema = getSchema(options.source);
+  if (!schema) throw new Error(`Unknown source: ${options.source}`);
+
+  const parsed = parseCSVContent(options.content);
+
+  // ─── Preload data in parallel ─────────────────────────────
+  const [customersRes, customerSourcesRes] = await Promise.all([
+    admin
+      .from("customers")
+      .select("id, email, phone, full_name")
+      .eq("org_id", DEFAULT_ORG_ID),
+    admin
+      .from("customer_sources")
+      .select("source, external_id, customer_id, external_email, customers(id, full_name, email, phone)")
+  ]);
+
+  // Also preload duplicate-check data based on source
+  let existingExternalIds: Set<string> | null = null;
+  {
+    let table: string | null = null;
+    let idColumn: string | null = null;
+    let sourceFilter: string | null = null;
+    switch (options.source) {
+      case "stripe": table = "payments"; idColumn = "external_payment_id"; sourceFilter = "stripe"; break;
+      case "pos": table = "payments"; idColumn = "external_payment_id"; sourceFilter = "pos"; break;
+      case "calendly": table = "bookings"; idColumn = "external_booking_id"; sourceFilter = "calendly"; break;
+      case "wetravel": table = "bookings"; idColumn = "external_booking_id"; sourceFilter = "wetravel"; break;
+      case "passline": table = "attendance"; idColumn = "external_attendance_id"; sourceFilter = "passline"; break;
+    }
+    if (table && idColumn && sourceFilter) {
+      const { data } = await admin.from(table).select(idColumn).eq("source", sourceFilter);
+      if (data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        existingExternalIds = new Set(data.map((r: any) => r[idColumn!] as string));
+      }
+    }
+  }
+
+  // ─── Build in-memory indexes ──────────────────────────────
+  type CustomerRecord = { id: string; full_name: string | null; email: string | null; phone: string | null };
+
+  const emailMap = new Map<string, CustomerRecord>();
+  const phoneMap = new Map<string, CustomerRecord>();
+  const nameMap = new Map<string, CustomerRecord[]>();
+
+  if (customersRes.data) {
+    for (const c of customersRes.data) {
+      const rec: CustomerRecord = { id: c.id, full_name: c.full_name, email: c.email, phone: c.phone };
+      if (c.email) emailMap.set(c.email.trim().toLowerCase(), rec);
+      if (c.phone) {
+        const norm = normalizePhone(c.phone);
+        if (norm) phoneMap.set(norm, rec);
+      }
+      if (c.full_name) {
+        const key = c.full_name.toLowerCase();
+        const arr = nameMap.get(key) ?? [];
+        if (arr.length < 5) arr.push(rec);
+        nameMap.set(key, arr);
+      }
+    }
+  }
+
+  // source:external_id → { customer_id, customer record }
+  const sourceIdMap = new Map<string, { customerId: string; customer: CustomerRecord | null }>();
+  // external_email → { customer_id, customer record }
+  const extEmailMap = new Map<string, { customerId: string; customer: CustomerRecord | null }>();
+
+  if (customerSourcesRes.data) {
+    for (const s of customerSourcesRes.data) {
+      const cArr = s.customers as unknown as CustomerRecord[] | null;
+      const c = cArr?.[0] ?? null;
+      sourceIdMap.set(`${s.source}:${s.external_id}`, { customerId: s.customer_id, customer: c });
+      if (s.external_email) {
+        extEmailMap.set(s.external_email.trim().toLowerCase(), { customerId: s.customer_id, customer: c });
+      }
+    }
+  }
+
+  // ─── Pure helper functions (replicated from matcher.ts) ───
+  function detectEnrichableFields(
+    existing: { full_name: string | null; email: string | null; phone: string | null },
+    name: string | null,
+    email: string | null,
+    phone: string | null
+  ): import("@/lib/types").EnrichableField[] {
+    const fields: import("@/lib/types").EnrichableField[] = [];
+    if (!existing.full_name && name) fields.push({ field: "full_name", existingValue: null, newValue: name });
+    if (!existing.email && email) fields.push({ field: "email", existingValue: null, newValue: email });
+    if (!existing.phone && phone) fields.push({ field: "phone", existingValue: null, newValue: phone });
+    return fields;
+  }
+
+  function hasConflictingFields(
+    existing: { full_name: string | null; email: string | null },
+    name: string | null,
+    email: string | null
+  ): boolean {
+    if (existing.full_name && name && existing.full_name.toLowerCase() !== name.toLowerCase()) return true;
+    if (existing.email && email && existing.email.toLowerCase() !== email.toLowerCase()) return true;
+    return false;
+  }
+
+  // ─── Process rows ─────────────────────────────────────────
+  const uncertainRows: StitchPreviewRow[] = [];
+  const nameReviewRows: StitchPreviewRow[] = [];
+  const confidentRows: StitchPreviewRow[] = [];
+  const newRows: StitchPreviewRow[] = [];
+  const duplicateRows: StitchPreviewRow[] = [];
+  const enrichmentRows: StitchPreviewRow[] = [];
+  const flaggedRows: StitchPreviewRow[] = [];
+  const allWarnings: ValidationError[] = [];
+
+  let confidentCount = 0;
+  let uncertainCount = 0;
+  let nameReviewCount = 0;
+  let newCount = 0;
+  let duplicateCount = 0;
+  let enrichmentCount = 0;
+  let flaggedCount = 0;
+  let totalValid = 0;
+
+  for (let i = 0; i < parsed.rows.length; i++) {
+    const rawRow = parsed.rows[i];
+    const mapped = applyMapping(rawRow, options.mapping);
+    if (mapped.status) {
+      mapped.status = normalizeStatus(mapped.status, options.source);
+    }
+    const { errors: rowErrors, warnings: rowWarnings } = validateMappedRow(mapped, schema, i + 1);
+    if (rowWarnings.length > 0) {
+      allWarnings.push(...rowWarnings);
+    }
+
+    // Flagged: validation errors (instead of silent skip)
+    if (rowErrors.length > 0) {
+      flaggedCount++;
+      flaggedRows.push({
+        rowIndex: i + 1,
+        externalId: mapped[schema.idField] ?? "",
+        email: mapped[schema.emailField] ?? null,
+        name: schema.nameField ? (mapped[schema.nameField] ?? null) : null,
+        phone: schema.phoneField ? (mapped[schema.phoneField] ?? null) : null,
+        category: "flagged",
+        existingCustomerId: null,
+        existingCustomerName: null,
+        existingCustomerEmail: null,
+        confidence: 0,
+        candidates: [],
+        enrichableFields: [],
+        rawRow,
+        flagReason: rowErrors.map((e) => e.message).join("; "),
+      });
+      continue;
+    }
+
+    const externalId = mapped[schema.idField] ?? "";
+    const email = mapped[schema.emailField] ?? null;
+    const name = schema.nameField ? (mapped[schema.nameField] ?? null) : null;
+    const phone = schema.phoneField ? (mapped[schema.phoneField] ?? null) : null;
+
+    const stitchExternalId =
+      schema.customerIdField
+        ? (mapped[schema.customerIdField] ?? externalId)
+        : externalId;
+
+    // Flagged: no usable identifier — must match import-time guardrails per source
+    const memberId = mapped.member_id ?? null;
+    let noIdentifier = false;
+    let flagMsg = "";
+    if (options.source === "crm") {
+      // CRM requires email, phone, or member_id
+      if (!email && !phone && !memberId) {
+        noIdentifier = true;
+        flagMsg = "No usable identifier (need email, phone, or member_id)";
+      }
+    } else if (options.source === "attribution") {
+      // Attribution requires email or phone
+      if (!email && !phone) {
+        noIdentifier = true;
+        flagMsg = "No usable identifier (need email or phone)";
+      }
+    } else {
+      // Transaction sources use full stitch cascade — only flag if nothing at all
+      if (!stitchExternalId && !email && !phone && !name) {
+        noIdentifier = true;
+        flagMsg = "No usable identifier (no ID, email, phone, or name)";
+      }
+    }
+    if (noIdentifier) {
+      flaggedCount++;
+      flaggedRows.push({
+        rowIndex: i + 1,
+        externalId: externalId || "",
+        email,
+        name,
+        phone,
+        category: "flagged",
+        existingCustomerId: null,
+        existingCustomerName: null,
+        existingCustomerEmail: null,
+        confidence: 0,
+        candidates: [],
+        enrichableFields: [],
+        rawRow,
+        flagReason: flagMsg,
+      });
+      continue;
+    }
+
+    totalValid++;
+
+    // Duplicate check
+    if (externalId && existingExternalIds?.has(externalId)) {
+      duplicateCount++;
+      if (duplicateRows.length < 50) {
+        duplicateRows.push({
+          rowIndex: i + 1,
+          externalId,
+          email,
+          name,
+          phone,
+          category: "duplicate",
+          existingCustomerId: null,
+          existingCustomerName: null,
+          existingCustomerEmail: null,
+          confidence: 1,
+          candidates: [],
+          enrichableFields: [],
+        });
+      }
+      continue;
+    }
+
+    // ─── In-memory stitch cascade ─────────────────────────
+
+    // 1. External ID match via sourceIdMap
+    if (stitchExternalId) {
+      const sourceKey = `${options.source}:${stitchExternalId}`;
+      const match = sourceIdMap.get(sourceKey);
+      if (match) {
+        const c = match.customer;
+        if (c) {
+          const ef = detectEnrichableFields(c, name, email, phone);
+          if (ef.length > 0 && !hasConflictingFields(c, name, email)) {
+            enrichmentCount++;
+            enrichmentRows.push({
+              rowIndex: i + 1, externalId, email, name, phone,
+              category: "enrichment",
+              existingCustomerId: match.customerId,
+              existingCustomerName: c.full_name,
+              existingCustomerEmail: c.email,
+              confidence: 1.0,
+              candidates: [], enrichableFields: ef, rawRow,
+            });
+            continue;
+          }
+        }
+        confidentCount++;
+        if (confidentRows.length < 50) {
+          confidentRows.push({
+            rowIndex: i + 1, externalId, email, name, phone,
+            category: "external_id",
+            existingCustomerId: match.customerId,
+            existingCustomerName: c?.full_name ?? null,
+            existingCustomerEmail: c?.email ?? null,
+            confidence: 1.0,
+            candidates: [], enrichableFields: [], rawRow,
+          });
+        }
+        continue;
+      }
+    }
+
+    // 2. Email match — customers table
+    if (email) {
+      const emailKey = email.trim().toLowerCase();
+      const customerMatch = emailMap.get(emailKey);
+      if (customerMatch) {
+        const ef = detectEnrichableFields(customerMatch, name, email, phone);
+        if (ef.length > 0 && !hasConflictingFields(customerMatch, name, email)) {
+          enrichmentCount++;
+          enrichmentRows.push({
+            rowIndex: i + 1, externalId, email, name, phone,
+            category: "enrichment",
+            existingCustomerId: customerMatch.id,
+            existingCustomerName: customerMatch.full_name,
+            existingCustomerEmail: customerMatch.email,
+            confidence: 0.95,
+            candidates: [], enrichableFields: ef, rawRow,
+          });
+          continue;
+        }
+
+        // Name mismatch check
+        if (name && customerMatch.full_name && customerMatch.full_name.toLowerCase() !== name.toLowerCase()) {
+          nameReviewCount++;
+          nameReviewRows.push({
+            rowIndex: i + 1, externalId, email, name, phone,
+            category: "email_name_mismatch",
+            existingCustomerId: customerMatch.id,
+            existingCustomerName: customerMatch.full_name,
+            existingCustomerEmail: customerMatch.email,
+            confidence: 0.95,
+            candidates: [], enrichableFields: [], rawRow,
+          });
+          continue;
+        }
+
+        confidentCount++;
+        if (confidentRows.length < 50) {
+          confidentRows.push({
+            rowIndex: i + 1, externalId, email, name, phone,
+            category: "email",
+            existingCustomerId: customerMatch.id,
+            existingCustomerName: customerMatch.full_name,
+            existingCustomerEmail: customerMatch.email,
+            confidence: 0.95,
+            candidates: [], enrichableFields: [], rawRow,
+          });
+        }
+        continue;
+      }
+
+      // Email match — customer_sources external_email
+      const extMatch = extEmailMap.get(emailKey);
+      if (extMatch) {
+        const c = extMatch.customer;
+        if (c) {
+          const ef = detectEnrichableFields(c, name, email, phone);
+          if (ef.length > 0 && !hasConflictingFields(c, name, email)) {
+            enrichmentCount++;
+            enrichmentRows.push({
+              rowIndex: i + 1, externalId, email, name, phone,
+              category: "enrichment",
+              existingCustomerId: extMatch.customerId,
+              existingCustomerName: c.full_name,
+              existingCustomerEmail: c.email,
+              confidence: 0.9,
+              candidates: [], enrichableFields: ef, rawRow,
+            });
+            continue;
+          }
+
+          // Name mismatch on source email
+          if (name && c.full_name && c.full_name.toLowerCase() !== name.toLowerCase()) {
+            nameReviewCount++;
+            nameReviewRows.push({
+              rowIndex: i + 1, externalId, email, name, phone,
+              category: "email_name_mismatch",
+              existingCustomerId: extMatch.customerId,
+              existingCustomerName: c.full_name,
+              existingCustomerEmail: c.email,
+              confidence: 0.9,
+              candidates: [], enrichableFields: [], rawRow,
+            });
+            continue;
+          }
+        }
+
+        confidentCount++;
+        if (confidentRows.length < 50) {
+          confidentRows.push({
+            rowIndex: i + 1, externalId, email, name, phone,
+            category: "email",
+            existingCustomerId: extMatch.customerId,
+            existingCustomerName: c?.full_name ?? null,
+            existingCustomerEmail: c?.email ?? null,
+            confidence: 0.9,
+            candidates: [], enrichableFields: [], rawRow,
+          });
+        }
+        continue;
+      }
+    }
+
+    // 3. Phone match
+    const normalizedPhone = normalizePhone(phone);
+    if (normalizedPhone) {
+      // Check all phone matches (iterate phoneMap for phonesMatch)
+      const phoneMatches: CustomerRecord[] = [];
+      for (const [, rec] of phoneMap) {
+        if (normalizePhone(rec.phone) === normalizedPhone) {
+          phoneMatches.push(rec);
+        }
+      }
+
+      if (phoneMatches.length === 1) {
+        const match = phoneMatches[0];
+        const ef = detectEnrichableFields(match, name, email, phone);
+        if (ef.length > 0 && !hasConflictingFields(match, name, email)) {
+          enrichmentCount++;
+          enrichmentRows.push({
+            rowIndex: i + 1, externalId, email, name, phone,
+            category: "enrichment",
+            existingCustomerId: match.id,
+            existingCustomerName: match.full_name,
+            existingCustomerEmail: match.email,
+            confidence: 0.75,
+            candidates: [], enrichableFields: ef, rawRow,
+          });
+          continue;
+        }
+        uncertainCount++;
+        uncertainRows.push({
+          rowIndex: i + 1, externalId, email, name, phone,
+          category: "phone",
+          existingCustomerId: match.id,
+          existingCustomerName: match.full_name,
+          existingCustomerEmail: match.email,
+          confidence: 0.75,
+          candidates: [{
+            customerId: match.id,
+            customerName: match.full_name,
+            customerEmail: match.email,
+            customerPhone: match.phone,
+            matchedBy: "phone",
+            confidence: 0.75,
+          }],
+          enrichableFields: [], rawRow,
+        });
+        continue;
+      }
+
+      if (phoneMatches.length > 1) {
+        uncertainCount++;
+        uncertainRows.push({
+          rowIndex: i + 1, externalId, email, name, phone,
+          category: "phone",
+          existingCustomerId: phoneMatches[0].id,
+          existingCustomerName: phoneMatches[0].full_name,
+          existingCustomerEmail: phoneMatches[0].email,
+          confidence: 0.6,
+          candidates: phoneMatches.map((m) => ({
+            customerId: m.id,
+            customerName: m.full_name,
+            customerEmail: m.email,
+            customerPhone: m.phone,
+            matchedBy: "phone" as const,
+            confidence: 0.6,
+          })),
+          enrichableFields: [], rawRow,
+        });
+        continue;
+      }
+    }
+
+    // 4. Name match
+    if (name) {
+      const nameMatches = nameMap.get(name.toLowerCase());
+      if (nameMatches && nameMatches.length > 0) {
+        if (nameMatches.length === 1) {
+          const existing = nameMatches[0];
+          const isConflict = existing.email && email && existing.email.toLowerCase() !== email.toLowerCase();
+          const category = isConflict ? "name_conflict" as const : "name_match" as const;
+
+          uncertainCount++;
+          uncertainRows.push({
+            rowIndex: i + 1, externalId, email, name, phone,
+            category,
+            existingCustomerId: existing.id,
+            existingCustomerName: existing.full_name,
+            existingCustomerEmail: existing.email,
+            confidence: 0.65,
+            candidates: [{
+              customerId: existing.id,
+              customerName: existing.full_name,
+              customerEmail: existing.email,
+              customerPhone: existing.phone,
+              matchedBy: "name",
+              confidence: 0.65,
+            }],
+            enrichableFields: [], rawRow,
+          });
+          continue;
+        }
+
+        // Multiple name matches
+        uncertainCount++;
+        uncertainRows.push({
+          rowIndex: i + 1, externalId, email, name, phone,
+          category: "name_match",
+          existingCustomerId: nameMatches[0].id,
+          existingCustomerName: nameMatches[0].full_name,
+          existingCustomerEmail: nameMatches[0].email,
+          confidence: 0.5,
+          candidates: nameMatches.map((c) => ({
+            customerId: c.id,
+            customerName: c.full_name,
+            customerEmail: c.email,
+            customerPhone: c.phone,
+            matchedBy: "name" as const,
+            confidence: 0.5,
+          })),
+          enrichableFields: [], rawRow,
+        });
+        continue;
+      }
+    }
+
+    // 5. No match — new customer
+    newCount++;
+    if (newRows.length < 50) {
+      newRows.push({
+        rowIndex: i + 1, externalId, email, name, phone,
+        category: "new",
+        existingCustomerId: null,
+        existingCustomerName: null,
+        existingCustomerEmail: null,
+        confidence: 0,
+        candidates: [], enrichableFields: [], rawRow,
+      });
+    }
+  }
+
+  // ─── Dev-only parity check ──────────────────────────────
+  if (process.env.NODE_ENV === "development") {
+    const sampleRows = [...confidentRows.slice(0, 3), ...uncertainRows.slice(0, 3), ...newRows.slice(0, 4)];
+    const parityChecks = sampleRows.slice(0, 10).map(async (row) => {
+      try {
+        const original = await previewStitchIdentity(
+          admin, options.source,
+          schema.customerIdField ? (row.rawRow?.[schema.customerIdField] ?? row.externalId) : row.externalId,
+          row.email, row.name, row.phone
+        );
+        if (original.category !== row.category) {
+          console.warn(`[parity] row ${row.rowIndex}: fast=${row.category}, original=${original.category}`);
+        }
+      } catch {
+        // Parity check is best-effort
+      }
+    });
+    // Fire and forget — don't block the response
+    Promise.all(parityChecks).catch(() => {});
+  }
+
+  return {
+    summary: {
+      confidentMatches: confidentCount,
+      uncertainMatches: uncertainCount,
+      nameReviewMatches: nameReviewCount,
+      newCustomers: newCount,
+      duplicateRows: duplicateCount,
+      enrichments: enrichmentCount,
+      flaggedCount,
+      totalValidRows: totalValid,
+    },
+    uncertainRows,
+    nameReviewRows,
+    confidentRows,
+    newRows,
+    duplicateRows,
+    enrichmentRows,
+    flaggedRows,
+    warnings: allWarnings.slice(0, 50),
   };
 }
 
@@ -654,6 +1260,25 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
     const isJourneys = resolvedSchemaKey === "attribution_journeys";
     const attributionType = isJourneys ? "touchpoint" : "summary";
 
+    // Preload customer data for fast in-memory matching
+    const { data: attrCustomers } = await admin
+      .from("customers")
+      .select("id, email, phone, full_name, name_source")
+      .eq("org_id", DEFAULT_ORG_ID);
+
+    const attrEmailIndex = new Map<string, { id: string; full_name: string | null; name_source: string | null }>();
+    const attrPhoneIndex = new Map<string, string>();
+
+    if (attrCustomers) {
+      for (const c of attrCustomers) {
+        if (c.email) attrEmailIndex.set(c.email.trim().toLowerCase(), { id: c.id, full_name: c.full_name, name_source: c.name_source });
+        if (c.phone) {
+          const norm = normalizePhone(c.phone);
+          if (norm) attrPhoneIndex.set(norm, c.id);
+        }
+      }
+    }
+
     for (let i = 0; i < parsed.rows.length; i++) {
       const rawRow = parsed.rows[i];
       const mapped = applyMapping(rawRow, mapping);
@@ -673,7 +1298,60 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
       }
 
       try {
-        const { customerId, isNew } = await matchAttributionCustomer(admin, email, phone, name);
+        let customerId: string | null = null;
+        let isNew = false;
+
+        // 1. Email match (in-memory)
+        if (email) {
+          const key = email.trim().toLowerCase();
+          const match = attrEmailIndex.get(key);
+          if (match) {
+            customerId = match.id;
+            if (name && (!match.full_name || shouldUpdateName(match.name_source, "attribution"))) {
+              await admin.from("customers").update({
+                full_name: name,
+                name_source: "attribution",
+                updated_at: new Date().toISOString(),
+              }).eq("id", match.id);
+              attrEmailIndex.set(key, { ...match, full_name: name, name_source: "attribution" });
+            }
+          }
+        }
+
+        // 2. Phone match (in-memory)
+        if (!customerId && phone) {
+          const norm = normalizePhone(phone);
+          if (norm) {
+            const matchId = attrPhoneIndex.get(norm);
+            if (matchId) customerId = matchId;
+          }
+        }
+
+        // 3. No match — create new customer
+        if (!customerId) {
+          const { data: newCust, error: newCustErr } = await admin
+            .from("customers")
+            .insert({
+              org_id: DEFAULT_ORG_ID,
+              email,
+              full_name: name,
+              phone: phone ?? null,
+              name_source: name ? "attribution" : null,
+            })
+            .select("id")
+            .single();
+          if (newCustErr) throw new Error(`Failed to create customer: ${newCustErr.message}`);
+          const newId = newCust.id;
+          customerId = newId;
+          isNew = true;
+          // Update indexes for subsequent rows
+          if (email) attrEmailIndex.set(email.trim().toLowerCase(), { id: newId, full_name: name, name_source: "attribution" });
+          if (phone) {
+            const norm = normalizePhone(phone);
+            if (norm) attrPhoneIndex.set(norm, newId);
+          }
+        }
+
         if (isNew) newCustomersCreated++;
         else matchedByEmail++;
 

@@ -2,17 +2,17 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { PanelLeftClose } from "lucide-react";
 import {
-  LayoutDashboard,
-  Users,
-  Upload,
-  History,
-  AlertTriangle,
-  LogOut,
-  PanelLeftClose,
-  Sun,
-  Moon,
-} from "lucide-react";
+  DashboardIcon,
+  CustomersIcon,
+  UploadIcon,
+  ImportsIcon,
+  ConflictsIcon,
+  SunIcon,
+  MoonIcon,
+  LogOutIcon,
+} from "@/components/sidebar-icons";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -28,11 +28,11 @@ export const SIDEBAR_EXPANDED_W = 260;
 export const SIDEBAR_COLLAPSED_W = 64;
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/customers", label: "Customers", icon: Users },
-  { href: "/upload", label: "Upload", icon: Upload },
-  { href: "/imports", label: "Imports", icon: History },
-  { href: "/conflicts", label: "Conflicts", icon: AlertTriangle },
+  { href: "/", label: "Dashboard", icon: DashboardIcon },
+  { href: "/customers", label: "Customers", icon: CustomersIcon },
+  { href: "/upload", label: "Upload", icon: UploadIcon },
+  { href: "/imports", label: "Imports", icon: ImportsIcon },
+  { href: "/conflicts", label: "Conflicts", icon: ConflictsIcon },
 ];
 
 export function Sidebar() {
@@ -60,7 +60,7 @@ export function Sidebar() {
       <aside
         onClick={handleSidebarClick}
         className={cn(
-          "fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border-default bg-surface transition-[width] duration-200 overflow-hidden",
+          "sb-nav fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border-default bg-surface transition-[width] duration-200 overflow-hidden",
           collapsed ? "cursor-pointer" : ""
         )}
         style={{
@@ -129,10 +129,10 @@ export function Sidebar() {
               >
                 <item.icon
                   className={cn(
-                    "h-4 w-4 shrink-0 transition-colors",
+                    "h-4 w-4 shrink-0",
                     isActive
                       ? "text-text-on-active"
-                      : "text-text-muted group-hover:text-text-secondary"
+                      : "text-text-muted"
                   )}
                   strokeWidth={isActive ? 2.5 : 2}
                 />
@@ -172,12 +172,12 @@ export function Sidebar() {
                   e.stopPropagation();
                   toggleTheme();
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-text-muted overflow-hidden whitespace-nowrap transition-colors hover:bg-surface-elevated hover:text-text-primary"
+                className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-text-muted overflow-hidden whitespace-nowrap transition-colors hover:bg-surface-elevated hover:text-text-primary"
               >
                 {resolvedTheme === "dark" ? (
-                  <Sun className="h-4 w-4 shrink-0 text-text-muted" />
+                  <SunIcon className="h-4 w-4 shrink-0 text-text-muted" />
                 ) : (
-                  <Moon className="h-4 w-4 shrink-0 text-text-muted" />
+                  <MoonIcon className="h-4 w-4 shrink-0 text-text-muted" />
                 )}
                 <span
                   className={cn(
@@ -216,9 +216,9 @@ export function Sidebar() {
                   e.stopPropagation();
                   handleSignOut();
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-text-muted overflow-hidden whitespace-nowrap transition-colors hover:bg-surface-elevated hover:text-text-primary"
+                className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium text-text-muted overflow-hidden whitespace-nowrap transition-colors hover:bg-surface-elevated hover:text-text-primary"
               >
-                <LogOut className="h-4 w-4 shrink-0 text-text-muted" />
+                <LogOutIcon className="h-4 w-4 shrink-0 text-text-muted" />
                 <span
                   className={cn(
                     "transition-opacity duration-200",

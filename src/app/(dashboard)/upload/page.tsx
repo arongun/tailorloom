@@ -26,7 +26,7 @@ import { Progress } from "@/components/ui/progress";
 import { UploadMapper, type MultiFileEntry } from "./components/upload-mapper";
 import { StitchPreview } from "./components/stitch-preview";
 
-import { previewCSV, uploadCSV, previewStitching, previewCRMStitching, previewAttributionStitching } from "@/lib/actions/import";
+import { previewCSV, uploadCSV, previewStitching, previewStitchingFast, previewCRMStitching, previewAttributionStitching } from "@/lib/actions/import";
 import { generateMappingSuggestions, suggestionsToMapping } from "@/lib/csv/heuristic-mapper";
 import { getSchema } from "@/lib/csv/schemas";
 import { parseCSVContent } from "@/lib/csv/parser";
@@ -58,7 +58,13 @@ interface MultiFileQueueEntry {
   detectionResults: DetectionResult[];
   mapping?: Record<string, string>;
   // Preflight results (filled after "Preview All")
-  preflight?: { newRows: number; matchedRows: number; uncertainRows: number };
+  preflight?: { newRows: number; matchedRows: number; uncertainRows: number; flaggedRows: number; errorRows: number };
+  // Full stitch result per file
+  stitchResult?: StitchPreviewResult;
+  // Per-file user decisions
+  stitchDecisions?: StitchDecisions;
+  // User has seen this file's preview
+  reviewed?: boolean;
   // Import status
   status: "pending" | "previewing" | "ready" | "importing" | "done" | "error";
   result?: ImportResultDetailed;
@@ -103,6 +109,7 @@ export default function UploadPage() {
   // Multi-file queue
   const [multiFileQueue, setMultiFileQueue] = useState<MultiFileQueueEntry[] | null>(null);
   const [multiImporting, setMultiImporting] = useState(false);
+  const [reviewingIndex, setReviewingIndex] = useState<number | null>(null);
   const addMoreInputRef = useRef<HTMLInputElement>(null);
 
   // Session persistence
@@ -234,17 +241,20 @@ export default function UploadPage() {
         return;
       }
 
-      // Run stitch preview
-      const stitchResult = await previewStitching({
+      // Run stitch preview (fast in-memory version)
+      const stitchResult = await previewStitchingFast({
         source: data.source,
         content: data.content,
         mapping: data.mapping,
       });
 
-      // Initialize default decisions: all uncertain rows → "create_new"
+      // Initialize default decisions: all uncertain rows → "create_new", flagged → "skip"
       const defaults: StitchDecisions = {};
       for (const row of stitchResult.uncertainRows) {
         defaults[row.rowIndex] = { action: "create_new" };
+      }
+      for (const row of stitchResult.flaggedRows) {
+        defaults[row.rowIndex] = { action: "skip" };
       }
 
       setStitchPreviewResult(stitchResult);
@@ -375,18 +385,23 @@ export default function UploadPage() {
   const handleMultiPreviewAll = useCallback(async () => {
     if (!multiFileQueue) return;
 
-    for (let i = 0; i < multiFileQueue.length; i++) {
-      const entry = multiFileQueue[i];
-      if (!entry.source || entry.preflight || entry.status === "error") continue;
+    // Collect indices that need previewing
+    const toPreview = multiFileQueue
+      .map((entry, i) => ({ entry, i }))
+      .filter(({ entry }) => entry.source && !entry.preflight && entry.status !== "error");
 
-      // Set "previewing" status and yield to let React render spinner
+    // Process a single file preview with timeout
+    const processOne = async (idx: number) => {
+      const entry = multiFileQueue[idx];
+
+      // Set "previewing" status
       setMultiFileQueue((prev) => {
         if (!prev) return prev;
         const next = [...prev];
-        next[i] = { ...next[i], status: "previewing" };
+        next[idx] = { ...next[idx], status: "previewing" };
         return next;
       });
-      await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 0));
 
       try {
         const mapping = entry.mapping;
@@ -394,31 +409,58 @@ export default function UploadPage() {
           setMultiFileQueue((prev) => {
             if (!prev) return prev;
             const next = [...prev];
-            next[i] = { ...next[i], status: "error", error: "No mapping available" };
+            next[idx] = { ...next[idx], status: "error", error: "No mapping available" };
             return next;
           });
-          continue;
+          return;
         }
 
-        let stitchResult;
-        if (entry.source === "crm") {
-          stitchResult = await previewCRMStitching({ content: entry.content, mapping });
-        } else if (entry.source === "attribution") {
-          stitchResult = await previewAttributionStitching({ content: entry.content, mapping });
-        } else {
-          stitchResult = await previewStitching({ source: entry.source, content: entry.content, mapping });
+        // Wrap preview in 30s timeout — use previewStitchingFast for full results
+        const TIMEOUT_MS = 30_000;
+        const startTime = performance.now();
+
+        const previewPromise = previewStitchingFast({
+          source: entry.source!,
+          content: entry.content,
+          mapping,
+        });
+
+        const stitchResult = await Promise.race([
+          previewPromise,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Preview timed out")), TIMEOUT_MS)
+          ),
+        ]);
+
+        if (process.env.NODE_ENV === "development") {
+          const elapsed = Math.round(performance.now() - startTime);
+          console.log(`[preview] ${entry.file.name} (${entry.totalRows} rows) — ${elapsed}ms`);
+        }
+
+        // Initialize default decisions for uncertain rows
+        const defaults: StitchDecisions = {};
+        for (const row of stitchResult.uncertainRows) {
+          defaults[row.rowIndex] = { action: "create_new" };
+        }
+        // Default flagged rows to skip
+        for (const row of stitchResult.flaggedRows) {
+          defaults[row.rowIndex] = { action: "skip" };
         }
 
         setMultiFileQueue((prev) => {
           if (!prev) return prev;
           const next = [...prev];
-          next[i] = {
-            ...next[i],
+          next[idx] = {
+            ...next[idx],
             status: "ready",
+            stitchResult,
+            stitchDecisions: defaults,
             preflight: {
               newRows: stitchResult.summary.newCustomers,
               matchedRows: stitchResult.summary.confidentMatches + stitchResult.summary.enrichments,
-              uncertainRows: stitchResult.summary.uncertainMatches,
+              uncertainRows: stitchResult.summary.uncertainMatches + stitchResult.summary.nameReviewMatches,
+              flaggedRows: stitchResult.summary.flaggedCount,
+              errorRows: entry.totalRows - stitchResult.summary.totalValidRows - stitchResult.summary.flaggedCount,
             },
           };
           return next;
@@ -427,11 +469,25 @@ export default function UploadPage() {
         setMultiFileQueue((prev) => {
           if (!prev) return prev;
           const next = [...prev];
-          next[i] = { ...next[i], status: "error", error: err instanceof Error ? err.message : "Preview failed" };
+          next[idx] = { ...next[idx], status: "error", error: err instanceof Error ? err.message : "Preview failed" };
           return next;
         });
       }
-    }
+    };
+
+    // Bounded concurrency: process up to 2 files at a time
+    const CONCURRENCY = 2;
+    let cursor = 0;
+
+    const runNext = async (): Promise<void> => {
+      while (cursor < toPreview.length) {
+        const current = cursor++;
+        await processOne(toPreview[current].i);
+      }
+    };
+
+    const workers = Array.from({ length: Math.min(CONCURRENCY, toPreview.length) }, () => runNext());
+    await Promise.all(workers);
   }, [multiFileQueue]);
 
   const handleMultiImportAll = useCallback(async () => {
@@ -468,7 +524,7 @@ export default function UploadPage() {
           fileName: entry.file.name,
           content: entry.content,
           mapping,
-          stitchDecisions: {},
+          stitchDecisions: entry.stitchDecisions ?? {},
         });
 
         setMultiFileQueue((prev) => {
@@ -622,20 +678,32 @@ export default function UploadPage() {
       {/* Step content */}
       <div className="animate-fade-in-up stagger-3">
         {/* Multi-file queue mode */}
-        {multiFileQueue && (
+        {multiFileQueue && reviewingIndex === null && (
           <div className="space-y-4">
             <p className="text-[13px] text-text-muted mb-4">
               {multiFileQueue.length} files queued for import
             </p>
 
-            {/* Uncertain matches warning */}
-            {multiFileQueue.some((e) => e.preflight && e.preflight.uncertainRows > 0) && (
-              <div className="flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-500/20 bg-amber-50/60 dark:bg-amber-500/5 px-3 py-2">
-                <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                  {multiFileQueue.reduce((sum, e) => sum + (e.preflight?.uncertainRows ?? 0), 0)} rows across{" "}
-                  {multiFileQueue.filter((e) => e.preflight && e.preflight.uncertainRows > 0).length} files have uncertain matches and will be created as new customers
-                </p>
+            {/* Warnings: uncertain + flagged */}
+            {multiFileQueue.some((e) => e.preflight && (e.preflight.uncertainRows > 0 || e.preflight.flaggedRows > 0)) && (
+              <div className="space-y-2">
+                {multiFileQueue.some((e) => e.preflight && e.preflight.uncertainRows > 0) && (
+                  <div className="flex items-center gap-2 rounded-lg border border-amber-200 dark:border-amber-500/20 bg-amber-50/60 dark:bg-amber-500/5 px-3 py-2">
+                    <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                      {multiFileQueue.reduce((sum, e) => sum + (e.preflight?.uncertainRows ?? 0), 0)} rows need review across{" "}
+                      {multiFileQueue.filter((e) => e.preflight && e.preflight.uncertainRows > 0).length} files
+                    </p>
+                  </div>
+                )}
+                {multiFileQueue.some((e) => e.preflight && e.preflight.flaggedRows > 0) && (
+                  <div className="flex items-center gap-2 rounded-lg border border-rose-200 dark:border-rose-500/20 bg-rose-50/60 dark:bg-rose-500/5 px-3 py-2">
+                    <AlertTriangle className="h-3.5 w-3.5 text-rose-500 shrink-0" />
+                    <p className="text-[11px] text-rose-700 dark:text-rose-300">
+                      {multiFileQueue.reduce((sum, e) => sum + (e.preflight?.flaggedRows ?? 0), 0)} rows flagged (validation errors or missing identifiers)
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -650,7 +718,8 @@ export default function UploadPage() {
                       <>
                         <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider text-right">New</th>
                         <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider text-right">Matched</th>
-                        <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider text-right">Uncertain</th>
+                        <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider text-right">Review</th>
+                        <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider text-right">Flagged</th>
                       </>
                     )}
                     <th className="px-4 py-2.5 text-[11px] font-semibold text-text-muted uppercase tracking-wider">Status</th>
@@ -693,14 +762,22 @@ export default function UploadPage() {
                             {entry.preflight?.matchedRows ?? "—"}
                           </td>
                           <td className="px-4 py-2.5 text-[13px] text-right tabular-nums text-amber-600">
-                            {entry.preflight?.uncertainRows ?? "—"}
+                            {entry.preflight ? (entry.preflight.uncertainRows > 0 ? entry.preflight.uncertainRows : "—") : "—"}
+                          </td>
+                          <td className="px-4 py-2.5 text-[13px] text-right tabular-nums text-rose-600">
+                            {entry.preflight ? (entry.preflight.flaggedRows > 0 ? entry.preflight.flaggedRows : "—") : "—"}
                           </td>
                         </>
                       )}
                       <td className="px-4 py-2.5">
                         {entry.status === "pending" && <span className="text-[11px] text-text-muted">Pending</span>}
                         {entry.status === "previewing" && <Loader2 className="h-3 w-3 text-text-muted animate-spin" />}
-                        {entry.status === "ready" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
+                        {entry.status === "ready" && !entry.reviewed && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
+                        {entry.status === "ready" && entry.reviewed && (
+                          <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
+                            <CheckCircle2 className="h-3 w-3" /> Reviewed
+                          </span>
+                        )}
                         {entry.status === "importing" && <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />}
                         {entry.status === "done" && (
                           <span className="text-[11px] text-emerald-600 font-medium">
@@ -741,12 +818,13 @@ export default function UploadPage() {
             <div className="flex items-center justify-between">
               <Button
                 variant="ghost"
-                onClick={() => setMultiFileQueue(null)}
+                onClick={() => { setMultiFileQueue(null); setReviewingIndex(null); }}
                 className="text-[13px] text-text-muted hover:text-text-secondary"
               >
                 Cancel
               </Button>
               <div className="flex items-center gap-2">
+                {/* Phase 1: Preview All */}
                 {multiFileQueue.some((e) => e.status === "pending" && !e.preflight) && (
                   <Button
                     onClick={handleMultiPreviewAll}
@@ -763,7 +841,26 @@ export default function UploadPage() {
                     )}
                   </Button>
                 )}
-                {multiFileQueue.some((e) => e.preflight) && !multiFileQueue.every((e) => e.status === "done" || e.status === "error") && (
+                {/* Phase 1→2: Review Files (after preview, before all reviewed) */}
+                {multiFileQueue.some((e) => e.stitchResult) &&
+                 !multiFileQueue.every((e) => e.reviewed || e.status === "error") &&
+                 !multiFileQueue.every((e) => e.status === "done" || e.status === "error") &&
+                 !multiFileQueue.some((e) => e.status === "previewing") && (
+                  <Button
+                    onClick={() => {
+                      // Start reviewing from first non-reviewed, non-error file
+                      const idx = multiFileQueue.findIndex((e) => !e.reviewed && e.stitchResult && e.status !== "error");
+                      setReviewingIndex(idx >= 0 ? idx : 0);
+                    }}
+                    className="text-[13px]"
+                  >
+                    Review Files
+                    <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Button>
+                )}
+                {/* Phase 3: Import All (all reviewed) */}
+                {multiFileQueue.every((e) => e.reviewed || e.status === "error") &&
+                 !multiFileQueue.every((e) => e.status === "done" || e.status === "error") && (
                   <Button
                     onClick={handleMultiImportAll}
                     disabled={multiImporting}
@@ -784,7 +881,7 @@ export default function UploadPage() {
                 )}
                 {multiFileQueue.every((e) => e.status === "done" || e.status === "error") && (
                   <Button
-                    onClick={() => setMultiFileQueue(null)}
+                    onClick={() => { setMultiFileQueue(null); setReviewingIndex(null); }}
                     className="text-[13px]"
                   >
                     Done
@@ -794,6 +891,105 @@ export default function UploadPage() {
             </div>
           </div>
         )}
+
+        {/* Phase 2: Per-file review */}
+        {multiFileQueue && reviewingIndex !== null && (() => {
+          const entry = multiFileQueue[reviewingIndex];
+          const isFirst = reviewingIndex === 0;
+          const isLast = reviewingIndex === multiFileQueue.length - 1;
+          if (!entry?.stitchResult) return null;
+
+          return (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[14px] font-medium text-text-primary">
+                    File {reviewingIndex + 1} of {multiFileQueue.length} — {entry.file.name}
+                  </p>
+                  <p className="text-[12px] text-text-muted">
+                    {entry.source} · {entry.totalRows} rows
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  {multiFileQueue.map((e, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "h-2 w-2 rounded-full transition-colors",
+                        i === reviewingIndex
+                          ? "bg-surface-active"
+                          : e.reviewed
+                            ? "bg-emerald-500"
+                            : "bg-surface-muted"
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <StitchPreview
+                result={entry.stitchResult}
+                decisions={entry.stitchDecisions ?? {}}
+                onDecisionsChange={(decisions) => {
+                  setMultiFileQueue((prev) => {
+                    if (!prev) return prev;
+                    const next = [...prev];
+                    next[reviewingIndex] = { ...next[reviewingIndex], stitchDecisions: decisions };
+                    return next;
+                  });
+                }}
+              />
+
+              <div className="flex items-center justify-between pt-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (isFirst) {
+                      // Back to file list
+                      setReviewingIndex(null);
+                    } else {
+                      setReviewingIndex(reviewingIndex - 1);
+                    }
+                  }}
+                  className="text-[13px] text-text-muted hover:text-text-secondary"
+                >
+                  <ArrowLeft className="mr-1.5 h-4 w-4" />
+                  {isFirst ? "Back to File List" : "Previous File"}
+                </Button>
+                <Button
+                  onClick={() => {
+                    // Mark current file as reviewed
+                    setMultiFileQueue((prev) => {
+                      if (!prev) return prev;
+                      const next = [...prev];
+                      next[reviewingIndex] = { ...next[reviewingIndex], reviewed: true };
+                      return next;
+                    });
+                    if (isLast) {
+                      // Done reviewing → back to file list (Phase 3)
+                      setReviewingIndex(null);
+                    } else {
+                      setReviewingIndex(reviewingIndex + 1);
+                    }
+                  }}
+                  className="text-[13px]"
+                >
+                  {isLast ? (
+                    <>
+                      <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                      Done Reviewing
+                    </>
+                  ) : (
+                    <>
+                      Next File
+                      <ArrowRight className="ml-1.5 h-4 w-4" />
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Single file flow */}
         {!multiFileQueue && step === 1 && (

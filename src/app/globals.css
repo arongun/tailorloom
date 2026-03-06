@@ -224,3 +224,214 @@
 .stagger-3 { animation-delay: 160ms; }
 .stagger-4 { animation-delay: 240ms; }
 .stagger-5 { animation-delay: 320ms; }
+
+/* ── Sidebar icon micro-animations ───────────────── */
+
+/* Dashboard: bars swap heights (animate actual geometry, not scale) */
+/* Bar 1 (top-left, tall→short): shrinks from bottom, top stays */
+@keyframes sb-rect1 {
+  0%, 100% { y: 3px; height: 9px; }
+  50% { y: 3px; height: 5px; }
+}
+/* Bar 2 (top-right, short→tall): grows downward, top stays */
+@keyframes sb-rect2 {
+  0%, 100% { y: 3px; height: 5px; }
+  50% { y: 3px; height: 9px; }
+}
+/* Bar 3 (bottom-right, tall→short): shrinks from top, bottom stays at 21 */
+@keyframes sb-rect3 {
+  0%, 100% { y: 12px; height: 9px; }
+  50% { y: 16px; height: 5px; }
+}
+/* Bar 4 (bottom-left, short→tall): grows upward, bottom stays at 21 */
+@keyframes sb-rect4 {
+  0%, 100% { y: 16px; height: 5px; }
+  50% { y: 12px; height: 9px; }
+}
+
+/* Customers: geometry-based bounce (no transform → no blur) */
+@keyframes sb-cu-head1 {
+  0% { cy: 7px; }
+  30% { cy: 8.5px; }
+  50% { cy: 6.5px; }
+  65% { cy: 7.3px; }
+  100% { cy: 7px; }
+}
+@keyframes sb-cu-head2 {
+  0%   { d: path("M16 3.128a4 4 0 0 1 0 7.744"); }
+  30%  { d: path("M16 4.628a4 4 0 0 1 0 7.744"); }
+  50%  { d: path("M16 2.628a4 4 0 0 1 0 7.744"); }
+  65%  { d: path("M16 3.428a4 4 0 0 1 0 7.744"); }
+  100% { d: path("M16 3.128a4 4 0 0 1 0 7.744"); }
+}
+@keyframes sb-cu-body1 {
+  0%   { d: path("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
+  35%  { d: path("M16 21.8v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
+  55%  { d: path("M16 20.8v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
+  70%  { d: path("M16 21.2v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
+  100% { d: path("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
+}
+@keyframes sb-cu-body2 {
+  0%   { d: path("M22 21v-2a4 4 0 0 0-3-3.87"); }
+  35%  { d: path("M22 21.8v-2a4 4 0 0 0-3-3.87"); }
+  55%  { d: path("M22 20.8v-2a4 4 0 0 0-3-3.87"); }
+  70%  { d: path("M22 21.2v-2a4 4 0 0 0-3-3.87"); }
+  100% { d: path("M22 21v-2a4 4 0 0 0-3-3.87"); }
+}
+
+/* Upload: geometry-based arrow lift (no transform → no blur) */
+@keyframes sb-ul-line {
+  0%, 100% { d: path("M12 3v12"); }
+  40%      { d: path("M12 2v12"); }
+  75%      { d: path("M12 2.7v12"); }
+}
+@keyframes sb-ul-chev {
+  0%, 100% { d: path("M17 8 12 3 7 8"); }
+  40%      { d: path("M17 7 12 2 7 7"); }
+  75%      { d: path("M17 7.7 12 2.7 7 7.7"); }
+}
+@keyframes sb-ul-tray {
+  0%, 100% { d: path("M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"); }
+  40%      { d: path("M21 16v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"); }
+  75%      { d: path("M21 15.3v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"); }
+}
+
+/* Imports: circle nudges counter-clockwise then bounces back */
+@keyframes sb-circle-nudge {
+  0% { transform: rotate(0deg); }
+  35% { transform: rotate(-15deg); }
+  55% { transform: rotate(3deg); }
+  70% { transform: rotate(-1.5deg); }
+  85% { transform: rotate(0.5deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* Conflicts: rotational shake then settle */
+@keyframes sb-alert-shake {
+  0% { transform: rotate(0deg); }
+  15% { transform: rotate(-4.5deg); }
+  30% { transform: rotate(3.5deg); }
+  45% { transform: rotate(-2deg); }
+  60% { transform: rotate(1.5deg); }
+  78% { transform: rotate(-0.7deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* Sun: rays rotate */
+@keyframes sb-rays-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(90deg); }
+}
+
+/* Moon: gentle rock */
+@keyframes sb-moon-rock {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-12deg); }
+  75% { transform: rotate(12deg); }
+}
+
+/* Sign out: geometry-based arrow slide (no transform → no blur) */
+@keyframes sb-lo-chev {
+  0%, 100% { d: path("M16 17 21 12 16 7"); }
+  50%      { d: path("M18 17 23 12 18 7"); }
+}
+@keyframes sb-lo-line {
+  0%, 100% { d: path("M21 12H9"); }
+  50%      { d: path("M23 12H11"); }
+}
+
+/* ── Sidebar hover rules (scoped to .sb-nav) ─── */
+
+/* Dashboard: animate rect geometry so borders stay uniform */
+.sb-nav .group:hover .sb-dash-bar-1 > rect,
+.sb-nav .group:focus-visible .sb-dash-bar-1 > rect {
+  animation: sb-rect1 1s ease-in-out;
+}
+.sb-nav .group:hover .sb-dash-bar-2 > rect,
+.sb-nav .group:focus-visible .sb-dash-bar-2 > rect {
+  animation: sb-rect2 1s ease-in-out;
+}
+.sb-nav .group:hover .sb-dash-bar-3 > rect,
+.sb-nav .group:focus-visible .sb-dash-bar-3 > rect {
+  animation: sb-rect3 1s ease-in-out;
+}
+.sb-nav .group:hover .sb-dash-bar-4 > rect,
+.sb-nav .group:focus-visible .sb-dash-bar-4 > rect {
+  animation: sb-rect4 1s ease-in-out;
+}
+
+/* Customers: geometry-based bounce on individual elements */
+.sb-nav .group:hover .sb-cu-head1,
+.sb-nav .group:focus-visible .sb-cu-head1 {
+  animation: sb-cu-head1 1s ease-out;
+}
+.sb-nav .group:hover .sb-cu-head2,
+.sb-nav .group:focus-visible .sb-cu-head2 {
+  animation: sb-cu-head2 1s ease-out;
+}
+.sb-nav .group:hover .sb-cu-body1,
+.sb-nav .group:focus-visible .sb-cu-body1 {
+  animation: sb-cu-body1 1s ease-out;
+}
+.sb-nav .group:hover .sb-cu-body2,
+.sb-nav .group:focus-visible .sb-cu-body2 {
+  animation: sb-cu-body2 1s ease-out;
+}
+
+/* Upload: geometry-based arrow lift on individual paths */
+.sb-nav .group:hover .sb-ul-line,
+.sb-nav .group:focus-visible .sb-ul-line {
+  animation: sb-ul-line 1s ease-out;
+}
+.sb-nav .group:hover .sb-ul-chev,
+.sb-nav .group:focus-visible .sb-ul-chev {
+  animation: sb-ul-chev 1s ease-out;
+}
+.sb-nav .group:hover .sb-ul-tray,
+.sb-nav .group:focus-visible .sb-ul-tray {
+  animation: sb-ul-tray 1s ease-out;
+}
+
+/* Imports: outer circle nudges clockwise with bounce */
+.sb-nav .group:hover .sb-history-circle,
+.sb-nav .group:focus-visible .sb-history-circle {
+  animation: sb-circle-nudge 1s ease-out;
+  transform-origin: 12px 12px;
+}
+
+/* Conflicts: whole icon pulses */
+.sb-nav .group:hover .sb-alert-all,
+.sb-nav .group:focus-visible .sb-alert-all {
+  animation: sb-alert-shake 0.8s ease-out;
+  transform-origin: 12px 14px;
+}
+
+/* Sun: rays rotate, center stays */
+.sb-nav .group:hover .sb-sun-rays,
+.sb-nav .group:focus-visible .sb-sun-rays {
+  animation: sb-rays-spin 1s ease-out;
+  transform-origin: 12px 12px;
+}
+
+/* Moon: whole crescent rocks */
+.sb-nav .group:hover .sb-moon-all,
+.sb-nav .group:focus-visible .sb-moon-all {
+  animation: sb-moon-rock 1s ease-out;
+  transform-origin: 12px 12px;
+}
+
+/* Sign out: geometry-based arrow slide on individual paths */
+.sb-nav .group:hover .sb-lo-chev,
+.sb-nav .group:focus-visible .sb-lo-chev {
+  animation: sb-lo-chev 1s ease-out;
+}
+.sb-nav .group:hover .sb-lo-line,
+.sb-nav .group:focus-visible .sb-lo-line {
+  animation: sb-lo-line 1s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sb-nav [class^="sb-"] {
+    animation: none !important;
+  }
+}

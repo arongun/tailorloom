@@ -88,7 +88,8 @@ export type StitchMatchCategory =
   | "name_conflict"
   | "enrichment"
   | "new"
-  | "duplicate";
+  | "duplicate"
+  | "flagged";
 
 export interface StitchCandidate {
   customerId: string;
@@ -119,6 +120,7 @@ export interface StitchPreviewRow {
   candidates: StitchCandidate[];
   enrichableFields: EnrichableField[];
   rawRow?: Record<string, string>;
+  flagReason?: string;
 }
 
 export type StitchDecision =
@@ -138,6 +140,7 @@ export interface StitchPreviewSummary {
   newCustomers: number;
   duplicateRows: number;
   enrichments: number;
+  flaggedCount: number;
   totalValidRows: number;
 }
 
@@ -149,6 +152,7 @@ export interface StitchPreviewResult {
   newRows: StitchPreviewRow[];
   duplicateRows: StitchPreviewRow[];
   enrichmentRows: StitchPreviewRow[];
+  flaggedRows: StitchPreviewRow[];
   warnings: ValidationError[];
 }
 

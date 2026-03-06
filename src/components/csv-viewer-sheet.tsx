@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Loader2, FileSpreadsheet, ArrowRight, ChevronDown, Download, AlertTriangle, AlertCircle } from "lucide-react";
 import {
   Sheet,
@@ -9,7 +9,6 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -21,7 +20,14 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { getImportRows, getImportMetadata } from "@/lib/actions/history";
 import type { ImportError } from "@/lib/types";
 import Papa from "papaparse";
@@ -73,6 +79,26 @@ export function CsvViewerSheet({
     }
   }, [open, importId]);
 
+  const headerLabels = useMemo(() => {
+    if (!columnMapping) return null;
+    return new Map(Object.entries(columnMapping));
+  }, [columnMapping]);
+
+  const rowStatusMap = useMemo(() => {
+    const map = new Map<number, { errors: ImportError[]; warnings: ImportError[] }>();
+    for (const err of importErrors) {
+      if (!map.has(err.row)) map.set(err.row, { errors: [], warnings: [] });
+      map.get(err.row)!.errors.push(err);
+    }
+    for (const warn of importWarnings) {
+      if (!map.has(warn.row)) map.set(warn.row, { errors: [], warnings: [] });
+      map.get(warn.row)!.warnings.push(warn);
+    }
+    return map;
+  }, [importErrors, importWarnings]);
+
+  const hasIssues = importErrors.length > 0 || importWarnings.length > 0;
+
   const handleDownload = () => {
     if (rows.length === 0) return;
     const csv = Papa.unparse(rows, { columns: headers });
@@ -87,8 +113,8 @@ export function CsvViewerSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="!max-w-[900px] w-[900px] overflow-y-auto p-0">
-        <SheetHeader className="px-6 pt-6 pb-4 border-b border-border-muted">
+      <SheetContent className="!max-w-[900px] w-[900px] p-0 flex flex-col">
+        <SheetHeader className="px-6 pt-6 pb-4 border-b border-border-muted shrink-0">
           <div className="flex items-center justify-between">
             <div>
               <SheetTitle className="text-[15px] font-semibold text-text-primary">
@@ -115,11 +141,11 @@ export function CsvViewerSheet({
         </SheetHeader>
 
         {loading ? (
-          <div className="flex items-center justify-center py-24">
+          <div className="flex-1 flex items-center justify-center py-24">
             <Loader2 className="h-5 w-5 text-text-muted animate-spin" />
           </div>
         ) : (
-          <>
+          <div className="flex-1 min-h-0 flex flex-col">
             {/* Column Mapping */}
             {columnMapping && Object.keys(columnMapping).length > 0 && (
               <Collapsible defaultOpen={false}>
@@ -234,44 +260,123 @@ export function CsvViewerSheet({
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-[11px] font-medium text-text-muted w-[50px] sticky left-0 bg-surface z-10">
-                        #
-                      </TableHead>
-                      {headers.map((h) => (
-                        <TableHead
-                          key={h}
-                          className="text-[11px] font-medium text-text-muted whitespace-nowrap"
-                        >
-                          {h}
+              <TooltipProvider>
+                <div
+                  className="flex-1 min-h-0 overflow-auto"
+                  style={{ "--col-num-w": "50px" } as React.CSSProperties}
+                >
+                  <table className="w-full caption-bottom text-sm">
+                    <TableHeader className="sticky top-0 z-20 bg-surface [&_tr]:hover:bg-transparent">
+                      <TableRow>
+                        <TableHead className="text-[11px] font-medium text-text-muted w-[--col-num-w] sticky left-0 top-0 bg-surface z-30">
+                          #
                         </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {rows.map((row, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="text-[11px] text-text-muted tabular-nums sticky left-0 bg-surface z-10 border-r border-border-muted">
-                          {i + 1}
-                        </TableCell>
-                        {headers.map((h) => (
-                          <TableCell
-                            key={h}
-                            className="text-[12px] text-text-secondary whitespace-nowrap max-w-[300px] truncate"
-                          >
-                            {row[h] ?? ""}
-                          </TableCell>
-                        ))}
+                        {hasIssues && (
+                          <TableHead className="text-[11px] font-medium text-text-muted w-[160px] sticky left-[--col-num-w] bg-surface z-20">
+                            Status
+                          </TableHead>
+                        )}
+                        {headers.map((h) => {
+                          const mappedField = headerLabels?.get(h);
+                          return (
+                            <TableHead key={h} className="whitespace-nowrap py-2 bg-surface">
+                              {headerLabels ? (
+                                <div className="flex flex-col gap-0.5">
+                                  <span className={cn(
+                                    "text-[11px] font-semibold",
+                                    mappedField ? "text-text-primary" : "text-text-muted italic"
+                                  )}>
+                                    {mappedField ?? "Unmapped"}
+                                  </span>
+                                  <span className="text-[10px] text-text-muted font-normal">{h}</span>
+                                </div>
+                              ) : (
+                                <span className="text-[11px] font-medium text-text-muted">{h}</span>
+                              )}
+                            </TableHead>
+                          );
+                        })}
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((row, i) => (
+                        <TableRow
+                          key={i}
+                          className={cn(
+                            rowStatusMap.get(i + 1)?.errors.length
+                              ? "bg-rose-50/40 dark:bg-rose-500/[0.03]"
+                              : rowStatusMap.get(i + 1)?.warnings.length
+                                ? "bg-amber-50/40 dark:bg-amber-500/[0.03]"
+                                : ""
+                          )}
+                        >
+                          <TableCell className="text-[11px] text-text-muted tabular-nums sticky left-0 bg-surface z-10 border-r border-border-muted">
+                            {i + 1}
+                          </TableCell>
+                          {hasIssues && (() => {
+                            const status = rowStatusMap.get(i + 1);
+                            if (!status) return <TableCell className="sticky left-[--col-num-w] bg-surface z-10 border-r border-border-muted" />;
+
+                            const isError = status.errors.length > 0;
+                            const firstIssue = isError ? status.errors[0] : status.warnings[0];
+                            const totalCount = status.errors.length + status.warnings.length;
+                            const label = `${isError ? "E" : "W"}: ${firstIssue.message}`;
+
+                            return (
+                              <TableCell className={cn(
+                                "text-[11px] sticky left-[--col-num-w] z-10 border-r border-border-muted max-w-[160px]",
+                                isError
+                                  ? "bg-rose-50/80 dark:bg-rose-500/8 text-rose-600 dark:text-rose-400"
+                                  : "bg-amber-50/80 dark:bg-amber-500/8 text-amber-600 dark:text-amber-400"
+                              )}>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button type="button" className="flex items-center gap-1 truncate cursor-help text-left w-full focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm">
+                                      {isError
+                                        ? <AlertCircle className="h-3 w-3 shrink-0" />
+                                        : <AlertTriangle className="h-3 w-3 shrink-0" />}
+                                      <span className="truncate">{label}</span>
+                                      {totalCount > 1 && (
+                                        <span className="text-[10px] opacity-70 shrink-0">+{totalCount - 1}</span>
+                                      )}
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="right" className="max-w-[300px]">
+                                    <div className="space-y-1 text-[11px]">
+                                      {status.errors.map((e, j) => (
+                                        <p key={`e${j}`} className="text-rose-600 dark:text-rose-400">
+                                          {e.field && <span className="font-medium">{e.field}: </span>}
+                                          {e.message}
+                                        </p>
+                                      ))}
+                                      {status.warnings.map((w, j) => (
+                                        <p key={`w${j}`} className="text-amber-600 dark:text-amber-400">
+                                          {w.field && <span className="font-medium">{w.field}: </span>}
+                                          {w.message}
+                                        </p>
+                                      ))}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TableCell>
+                            );
+                          })()}
+                          {headers.map((h) => (
+                            <TableCell
+                              key={h}
+                              className="text-[12px] text-text-secondary whitespace-nowrap max-w-[300px] truncate"
+                            >
+                              {row[h] ?? ""}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </table>
+                </div>
+              </TooltipProvider>
             )}
-          </>
+          </div>
         )}
       </SheetContent>
     </Sheet>

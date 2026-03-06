@@ -121,6 +121,19 @@ export function StitchPreview({
         />
       </div>
 
+      {(summary.flaggedCount ?? 0) > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <SummaryCard
+            label="Flagged"
+            value={summary.flaggedCount ?? 0}
+            icon={<AlertTriangle className="h-4 w-4 text-rose-500" />}
+            borderColor="border-rose-300 dark:border-rose-700"
+            fillColor="bg-rose-50/50 dark:bg-rose-950/40"
+            description="Validation errors or missing identifiers"
+          />
+        </div>
+      )}
+
       {/* Data Enrichment section */}
       {result.enrichmentRows.length > 0 && (
         <div className="rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50/10 dark:bg-teal-950/20 overflow-hidden">
@@ -153,6 +166,15 @@ export function StitchPreview({
             ))}
           </div>
         </div>
+      )}
+
+      {/* Flagged rows — validation errors or missing identifiers */}
+      {result.flaggedRows.length > 0 && (
+        <FlaggedRowsSection
+          rows={result.flaggedRows}
+          decisions={decisions}
+          onDecisionChange={(rowIndex, d) => setDecision(rowIndex, d)}
+        />
       )}
 
       {/* Name review — email matched but name differs */}
@@ -1106,6 +1128,7 @@ function MatchBadge({ category }: { category: string }) {
     enrichment: { label: "Match + Enrich", color: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" },
     new: { label: "New", color: "bg-surface-muted text-text-secondary" },
     duplicate: { label: "Dup", color: "bg-surface-muted text-text-muted" },
+    flagged: { label: "Flagged", color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" },
   };
 
   const c = config[category] ?? config.new;
@@ -1119,6 +1142,102 @@ function MatchBadge({ category }: { category: string }) {
     >
       {c.label}
     </span>
+  );
+}
+
+function FlaggedRowsSection({
+  rows,
+  decisions,
+  onDecisionChange,
+}: {
+  rows: StitchPreviewRow[];
+  decisions: StitchDecisions;
+  onDecisionChange: (rowIndex: number, d: StitchDecision) => void;
+}) {
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(0);
+  const totalPages = Math.ceil(rows.length / PAGE_SIZE);
+  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  return (
+    <div className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50/10 dark:bg-rose-950/20 overflow-hidden">
+      <div className="border-b border-rose-200/60 dark:border-rose-800/60 px-5 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-rose-500" />
+          <p className="text-[13px] font-medium text-rose-800 dark:text-rose-300">
+            Flagged — {rows.length}{" "}
+            {rows.length === 1 ? "row" : "rows"} need attention
+          </p>
+        </div>
+        <p className="text-[11px] text-rose-600 dark:text-rose-400">
+          Validation errors or missing identifiers — these rows will be skipped
+        </p>
+      </div>
+      <div className="divide-y divide-rose-100 dark:divide-rose-900/40">
+        {pageRows.map((row) => {
+          const isSkipped = !decisions[row.rowIndex] || decisions[row.rowIndex].action === "skip";
+          return (
+            <div key={row.rowIndex} className="px-5 py-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-[11px] text-rose-500 dark:text-rose-400">
+                      Row {row.rowIndex}
+                    </span>
+                    <MatchBadge category="flagged" />
+                  </div>
+                  <div className="flex items-center gap-3 text-[12px] text-text-secondary">
+                    {row.name && <span className="truncate">{row.name}</span>}
+                    {row.email && <span className="text-text-muted truncate">{row.email}</span>}
+                    {row.phone && <span className="text-text-muted truncate">{row.phone}</span>}
+                    {!row.name && !row.email && !row.phone && (
+                      <span className="text-text-muted">No identifiable fields</span>
+                    )}
+                  </div>
+                  {row.flagReason && (
+                    <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
+                      {row.flagReason}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 pt-1 shrink-0">
+                  <DecisionButton
+                    active={isSkipped}
+                    onClick={() => onDecisionChange(row.rowIndex, { action: "skip" })}
+                    icon={<SkipForward className="h-3.5 w-3.5" />}
+                    label="Skip"
+                    activeColor="bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-700"
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 border-t border-rose-200/60 dark:border-rose-800/60 px-5 py-2">
+          <button
+            type="button"
+            disabled={page === 0}
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            className="text-[11px] text-rose-600 dark:text-rose-400 disabled:opacity-40 hover:underline"
+          >
+            Previous
+          </button>
+          <span className="text-[11px] text-rose-500 dark:text-rose-400">
+            Page {page + 1} of {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            className="text-[11px] text-rose-600 dark:text-rose-400 disabled:opacity-40 hover:underline"
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
