@@ -12,13 +12,21 @@ import { normalizeStatus } from "@/lib/csv/normalizers";
 import { getSchema, schemaKeyToSourceType, detectAttributionSubtype } from "@/lib/csv/schemas";
 import {
   stitchIdentity,
+  stitchIdentityFast,
   detectPostImportConflicts,
   previewStitchIdentity,
   checkDuplicateRow,
   matchCRMCustomer,
+  matchCRMCustomerFast,
   shouldUpdateName,
+  buildCustomerIndex,
 } from "@/lib/stitching/matcher";
 import { normalizePhone } from "@/lib/stitching/phone-utils";
+import {
+  namesMatch,
+  detectEnrichableFields,
+  hasConflictingFields,
+} from "@/lib/stitching/name-utils";
 import { resolveRates, toUSD } from "@/lib/fx";
 import type {
   SourceType,
@@ -545,16 +553,8 @@ export async function previewStitchingFast(options: {
 
   const parsed = parseCSVContent(options.content);
 
-  // ─── Preload data in parallel ─────────────────────────────
-  const [customersRes, customerSourcesRes] = await Promise.all([
-    admin
-      .from("customers")
-      .select("id, email, phone, full_name")
-      .eq("org_id", DEFAULT_ORG_ID),
-    admin
-      .from("customer_sources")
-      .select("source, external_id, customer_id, external_email, customers(id, full_name, email, phone)")
-  ]);
+  // ─── Preload data using shared index builder ────────────────
+  const { emailMap, phoneMap, nameMap, sourceIdMap, extEmailMap } = await buildCustomerIndex(admin, DEFAULT_ORG_ID);
 
   // Also preload duplicate-check data based on source
   let existingExternalIds: Set<string> | null = null;
@@ -576,70 +576,6 @@ export async function previewStitchingFast(options: {
         existingExternalIds = new Set(data.map((r: any) => r[idColumn!] as string));
       }
     }
-  }
-
-  // ─── Build in-memory indexes ──────────────────────────────
-  type CustomerRecord = { id: string; full_name: string | null; email: string | null; phone: string | null };
-
-  const emailMap = new Map<string, CustomerRecord>();
-  const phoneMap = new Map<string, CustomerRecord>();
-  const nameMap = new Map<string, CustomerRecord[]>();
-
-  if (customersRes.data) {
-    for (const c of customersRes.data) {
-      const rec: CustomerRecord = { id: c.id, full_name: c.full_name, email: c.email, phone: c.phone };
-      if (c.email) emailMap.set(c.email.trim().toLowerCase(), rec);
-      if (c.phone) {
-        const norm = normalizePhone(c.phone);
-        if (norm) phoneMap.set(norm, rec);
-      }
-      if (c.full_name) {
-        const key = c.full_name.toLowerCase();
-        const arr = nameMap.get(key) ?? [];
-        if (arr.length < 5) arr.push(rec);
-        nameMap.set(key, arr);
-      }
-    }
-  }
-
-  // source:external_id → { customer_id, customer record }
-  const sourceIdMap = new Map<string, { customerId: string; customer: CustomerRecord | null }>();
-  // external_email → { customer_id, customer record }
-  const extEmailMap = new Map<string, { customerId: string; customer: CustomerRecord | null }>();
-
-  if (customerSourcesRes.data) {
-    for (const s of customerSourcesRes.data) {
-      const cArr = s.customers as unknown as CustomerRecord[] | null;
-      const c = cArr?.[0] ?? null;
-      sourceIdMap.set(`${s.source}:${s.external_id}`, { customerId: s.customer_id, customer: c });
-      if (s.external_email) {
-        extEmailMap.set(s.external_email.trim().toLowerCase(), { customerId: s.customer_id, customer: c });
-      }
-    }
-  }
-
-  // ─── Pure helper functions (replicated from matcher.ts) ───
-  function detectEnrichableFields(
-    existing: { full_name: string | null; email: string | null; phone: string | null },
-    name: string | null,
-    email: string | null,
-    phone: string | null
-  ): import("@/lib/types").EnrichableField[] {
-    const fields: import("@/lib/types").EnrichableField[] = [];
-    if (!existing.full_name && name) fields.push({ field: "full_name", existingValue: null, newValue: name });
-    if (!existing.email && email) fields.push({ field: "email", existingValue: null, newValue: email });
-    if (!existing.phone && phone) fields.push({ field: "phone", existingValue: null, newValue: phone });
-    return fields;
-  }
-
-  function hasConflictingFields(
-    existing: { full_name: string | null; email: string | null },
-    name: string | null,
-    email: string | null
-  ): boolean {
-    if (existing.full_name && name && existing.full_name.toLowerCase() !== name.toLowerCase()) return true;
-    if (existing.email && email && existing.email.toLowerCase() !== email.toLowerCase()) return true;
-    return false;
   }
 
   // ─── Process rows ─────────────────────────────────────────
@@ -832,8 +768,8 @@ export async function previewStitchingFast(options: {
           continue;
         }
 
-        // Name mismatch check
-        if (name && customerMatch.full_name && customerMatch.full_name.toLowerCase() !== name.toLowerCase()) {
+        // Name mismatch check — uses smart matching (placeholder, format, abbreviation)
+        if (name && customerMatch.full_name && !namesMatch(customerMatch.full_name, name, customerMatch.email)) {
           nameReviewCount++;
           nameReviewRows.push({
             rowIndex: i + 1, externalId, email, name, phone,
@@ -882,8 +818,8 @@ export async function previewStitchingFast(options: {
             continue;
           }
 
-          // Name mismatch on source email
-          if (name && c.full_name && c.full_name.toLowerCase() !== name.toLowerCase()) {
+          // Name mismatch on source email — uses smart matching
+          if (name && c.full_name && !namesMatch(c.full_name, name, c.email)) {
             nameReviewCount++;
             nameReviewRows.push({
               rowIndex: i + 1, externalId, email, name, phone,
@@ -917,13 +853,7 @@ export async function previewStitchingFast(options: {
     // 3. Phone match
     const normalizedPhone = normalizePhone(phone);
     if (normalizedPhone) {
-      // Check all phone matches (iterate phoneMap for phonesMatch)
-      const phoneMatches: CustomerRecord[] = [];
-      for (const [, rec] of phoneMap) {
-        if (normalizePhone(rec.phone) === normalizedPhone) {
-          phoneMatches.push(rec);
-        }
-      }
+      const phoneMatches = phoneMap.get(normalizedPhone) ?? [];
 
       if (phoneMatches.length === 1) {
         const match = phoneMatches[0];
@@ -1170,6 +1100,9 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
 
   const decisions = options.stitchDecisions ?? {};
 
+  // Pre-load all customer data into in-memory indexes (2 queries total)
+  const customerIndex = await buildCustomerIndex(admin, DEFAULT_ORG_ID);
+
   // ─── CRM import path ────────────────────────────────────
   if (options.source === "crm") {
     for (let i = 0; i < parsed.rows.length; i++) {
@@ -1192,7 +1125,7 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
       }
 
       try {
-        const { customerId, isNew } = await matchCRMCustomer(admin, email, phone, memberId, name);
+        const { customerId, isNew } = await matchCRMCustomerFast(admin, customerIndex, email, phone, memberId, name);
         if (isNew) newCustomersCreated++;
         else matchedByEmail++;
 
@@ -1200,7 +1133,7 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
         const enrichedFields: Record<string, string | number> = {};
         const updates: Record<string, unknown> = {};
 
-        // Fetch current customer to check null fields
+        // Fetch extended CRM fields from DB (index only has basic fields)
         const { data: current } = await admin
           .from("customers")
           .select("full_name, email, phone, last_visit_date, classes_remaining, membership_status, referral_source, country, notes, occupation, skill_level, member_type, join_date, preferred_currency, preferred_time_slot, name_source")
@@ -1492,9 +1425,10 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
         }
       }
 
-      // Stitch identity
-      const { customerId, isNew, matchedBy } = await stitchIdentity(
+      // Stitch identity (fast in-memory lookups)
+      const { customerId, isNew, matchedBy } = await stitchIdentityFast(
         admin,
+        customerIndex,
         options.source,
         stitchExternalId,
         email,
@@ -1572,8 +1506,8 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
     })
     .eq("id", importId);
 
-  // Post-import conflict detection
-  const postConflicts = await detectPostImportConflicts(admin, importId);
+  // Post-import conflict detection (uses index for fast name lookups)
+  const postConflicts = await detectPostImportConflicts(admin, importId, customerIndex);
   conflictsCreated += postConflicts;
 
   return {

@@ -6,8 +6,32 @@ import type {
   EnrichableField,
 } from "@/lib/types";
 import { normalizePhone, phonesMatch } from "./phone-utils";
+import {
+  isPlaceholderName,
+  namesMatch,
+  detectEnrichableFields,
+  hasConflictingFields,
+} from "./name-utils";
 
 const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001";
+
+// ─── Pre-loaded index types for fast import ────────────────────────
+
+export interface CustomerRecord {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+  name_source?: string | null;
+}
+
+export interface CustomerIndex {
+  emailMap: Map<string, CustomerRecord>;
+  phoneMap: Map<string, CustomerRecord[]>;
+  nameMap: Map<string, CustomerRecord[]>;
+  sourceIdMap: Map<string, { customerId: string; customer: CustomerRecord | null }>;
+  extEmailMap: Map<string, { customerId: string; customer: CustomerRecord | null }>;
+}
 
 // Name precedence: higher number = higher priority for full_name updates.
 const NAME_SOURCE_PRIORITY: Record<string, number> = {
@@ -33,45 +57,6 @@ export interface PreviewStitchResult {
   confidence: number;
   candidates: StitchCandidate[];
   enrichableFields: EnrichableField[];
-}
-
-/**
- * Detect enrichable fields: existing customer has null fields the CSV can fill.
- */
-function detectEnrichableFields(
-  existing: { full_name: string | null; email: string | null; phone: string | null },
-  name: string | null,
-  email: string | null,
-  phone: string | null
-): EnrichableField[] {
-  const fields: EnrichableField[] = [];
-  if (!existing.full_name && name) {
-    fields.push({ field: "full_name", existingValue: null, newValue: name });
-  }
-  if (!existing.email && email) {
-    fields.push({ field: "email", existingValue: null, newValue: email });
-  }
-  if (!existing.phone && phone) {
-    fields.push({ field: "phone", existingValue: null, newValue: phone });
-  }
-  return fields;
-}
-
-/**
- * Check if there are conflicting fields (existing has a value AND CSV has a DIFFERENT value).
- */
-function hasConflictingFields(
-  existing: { full_name: string | null; email: string | null },
-  name: string | null,
-  email: string | null
-): boolean {
-  if (existing.full_name && name && existing.full_name.toLowerCase() !== name.toLowerCase()) {
-    return true;
-  }
-  if (existing.email && email && existing.email.toLowerCase() !== email.toLowerCase()) {
-    return true;
-  }
-  return false;
 }
 
 /**
@@ -156,7 +141,7 @@ export async function previewStitchIdentity(
       if (
         name &&
         customerByEmail.full_name &&
-        customerByEmail.full_name.toLowerCase() !== name.toLowerCase()
+        !namesMatch(customerByEmail.full_name, name, customerByEmail.email)
       ) {
         return {
           category: "email_name_mismatch",
@@ -210,7 +195,7 @@ export async function previewStitchIdentity(
       if (
         name &&
         c?.full_name &&
-        c.full_name.toLowerCase() !== name.toLowerCase()
+        !namesMatch(c.full_name, name, c.email)
       ) {
         return {
           category: "email_name_mismatch",
@@ -507,8 +492,9 @@ export async function stitchIdentity(
       .maybeSingle();
 
     if (customerByEmail) {
-      // Apply name precedence
-      if (name && (!customerByEmail.full_name || shouldUpdateName(customerByEmail.name_source, source))) {
+      // Apply name precedence — placeholder names (email-as-name) always get overwritten
+      const nameIsPlaceholder1 = customerByEmail.full_name && isPlaceholderName(customerByEmail.full_name, email);
+      if (name && (!customerByEmail.full_name || nameIsPlaceholder1 || shouldUpdateName(customerByEmail.name_source, source))) {
         await admin.from("customers").update({
           full_name: name,
           name_source: source,
@@ -547,7 +533,8 @@ export async function stitchIdentity(
           .select("full_name, name_source")
           .eq("id", sourceByEmail.customer_id)
           .single();
-        if (existCust && (!existCust.full_name || shouldUpdateName(existCust.name_source, source))) {
+        const nameIsPlaceholder2 = existCust?.full_name && isPlaceholderName(existCust.full_name, email);
+        if (existCust && (!existCust.full_name || nameIsPlaceholder2 || shouldUpdateName(existCust.name_source, source))) {
           await admin.from("customers").update({
             full_name: name,
             name_source: source,
@@ -707,7 +694,9 @@ async function enrichCustomer(
   if (!current) return;
 
   const updates: Record<string, string> = {};
-  if (!current.full_name && fields.full_name) updates.full_name = fields.full_name;
+  // Treat placeholder names (email stored as name) as null → CSV name always wins
+  const nameIsPlaceholder = current.full_name && isPlaceholderName(current.full_name, current.email);
+  if ((!current.full_name || nameIsPlaceholder) && fields.full_name) updates.full_name = fields.full_name;
   if (!current.email && fields.email) updates.email = fields.email;
   if (!current.phone && fields.phone) updates.phone = fields.phone;
 
@@ -909,10 +898,14 @@ export async function matchAttributionCustomer(
  * Post-import conflict detection.
  * Looks for customers with matching names but different emails that
  * were created during the same import.
+ *
+ * When a CustomerIndex is provided, uses in-memory name lookup instead
+ * of per-customer ilike queries.
  */
 export async function detectPostImportConflicts(
   admin: SupabaseClient,
-  importId: string
+  importId: string,
+  index?: CustomerIndex
 ): Promise<number> {
   const { data: sources } = await admin
     .from("customer_sources")
@@ -952,14 +945,22 @@ export async function detectPostImportConflicts(
   for (const customer of importCustomers) {
     if (!customer.full_name) continue;
 
-    const { data: nameMatches } = await admin
-      .from("customers")
-      .select("id, email")
-      .eq("org_id", DEFAULT_ORG_ID)
-      .ilike("full_name", customer.full_name)
-      .neq("id", customer.id);
-
-    if (!nameMatches) continue;
+    // Use index for name matching when available, otherwise fall back to DB
+    let nameMatches: { id: string; email: string | null }[];
+    if (index) {
+      const candidates = index.nameMap.get(customer.full_name.toLowerCase()) ?? [];
+      nameMatches = candidates
+        .filter(c => c.id !== customer.id)
+        .map(c => ({ id: c.id, email: c.email }));
+    } else {
+      const { data } = await admin
+        .from("customers")
+        .select("id, email")
+        .eq("org_id", DEFAULT_ORG_ID)
+        .ilike("full_name", customer.full_name)
+        .neq("id", customer.id);
+      nameMatches = data ?? [];
+    }
 
     for (const match of nameMatches) {
       if (match.email && customer.email && match.email !== customer.email) {
@@ -988,4 +989,305 @@ export async function detectPostImportConflicts(
   }
 
   return conflictsFound;
+}
+
+// ─── Pre-loaded index builder ─────────────────────────────────────
+
+/**
+ * Pre-load all customer data into in-memory indexes.
+ * 2 parallel queries total (customers + customer_sources), both org-scoped.
+ */
+export async function buildCustomerIndex(
+  admin: SupabaseClient,
+  orgId: string = DEFAULT_ORG_ID
+): Promise<CustomerIndex> {
+  const [customersRes, customerSourcesRes] = await Promise.all([
+    admin
+      .from("customers")
+      .select("id, email, phone, full_name, name_source")
+      .eq("org_id", orgId),
+    admin
+      .from("customer_sources")
+      .select("source, external_id, customer_id, external_email, customers(id, full_name, email, phone)")
+  ]);
+
+  const emailMap = new Map<string, CustomerRecord>();
+  const phoneMap = new Map<string, CustomerRecord[]>();
+  const nameMap = new Map<string, CustomerRecord[]>();
+
+  if (customersRes.data) {
+    for (const c of customersRes.data) {
+      const rec: CustomerRecord = {
+        id: c.id,
+        full_name: c.full_name,
+        email: c.email,
+        phone: c.phone,
+        name_source: c.name_source,
+      };
+      if (c.email) emailMap.set(c.email.trim().toLowerCase(), rec);
+      if (c.phone) {
+        const norm = normalizePhone(c.phone);
+        if (norm) {
+          const arr = phoneMap.get(norm) ?? [];
+          arr.push(rec);
+          phoneMap.set(norm, arr);
+        }
+      }
+      if (c.full_name) {
+        const key = c.full_name.toLowerCase();
+        const arr = nameMap.get(key) ?? [];
+        arr.push(rec);
+        nameMap.set(key, arr);
+      }
+    }
+  }
+
+  const sourceIdMap = new Map<string, { customerId: string; customer: CustomerRecord | null }>();
+  const extEmailMap = new Map<string, { customerId: string; customer: CustomerRecord | null }>();
+
+  if (customerSourcesRes.data) {
+    for (const s of customerSourcesRes.data) {
+      const cArr = s.customers as unknown as CustomerRecord[] | null;
+      const c = cArr?.[0] ?? null;
+      sourceIdMap.set(`${s.source}:${s.external_id}`, { customerId: s.customer_id, customer: c });
+      if (s.external_email) {
+        extEmailMap.set(s.external_email.trim().toLowerCase(), { customerId: s.customer_id, customer: c });
+      }
+    }
+  }
+
+  return { emailMap, phoneMap, nameMap, sourceIdMap, extEmailMap };
+}
+
+// ─── Fast stitching (in-memory reads, DB writes) ──────────────────
+
+/**
+ * Same cascade as stitchIdentity() but reads from pre-loaded CustomerIndex.
+ * Writes to DB as before. Updates all index maps after every write.
+ */
+export async function stitchIdentityFast(
+  admin: SupabaseClient,
+  index: CustomerIndex,
+  source: SourceType,
+  externalId: string,
+  email: string | null,
+  name: string | null,
+  phone: string | null,
+  forceCustomerId?: string,
+  enrichFields?: { full_name?: string; email?: string; phone?: string },
+  forceNameUpdate?: string,
+  importId?: string
+): Promise<StitchResult> {
+  // If user explicitly chose to merge or accept enrichment, skip cascade
+  if (forceCustomerId) {
+    if (enrichFields && Object.keys(enrichFields).length > 0) {
+      await enrichCustomer(admin, forceCustomerId, enrichFields);
+    }
+    if (forceNameUpdate) {
+      await admin
+        .from("customers")
+        .update({ full_name: forceNameUpdate, updated_at: new Date().toISOString() })
+        .eq("id", forceCustomerId);
+    }
+    await linkSourceToCustomer(admin, forceCustomerId, source, externalId, email, name, importId);
+    updateIndexAfterLink(index, source, externalId, email, forceCustomerId, null);
+    return { customerId: forceCustomerId, isNew: false, matchedBy: "email" };
+  }
+
+  // 1. Check external ID in index
+  if (externalId) {
+    const match = index.sourceIdMap.get(`${source}:${externalId}`);
+    if (match) {
+      return { customerId: match.customerId, isNew: false, matchedBy: "external_id" };
+    }
+  }
+
+  // 2. Check email
+  if (email) {
+    const emailKey = email.trim().toLowerCase();
+    const customerMatch = index.emailMap.get(emailKey);
+    if (customerMatch) {
+      // Apply name precedence
+      const nameIsPlaceholder = customerMatch.full_name && isPlaceholderName(customerMatch.full_name, email);
+      if (name && (!customerMatch.full_name || nameIsPlaceholder || shouldUpdateName(customerMatch.name_source ?? null, source))) {
+        await admin.from("customers").update({
+          full_name: name, name_source: source, updated_at: new Date().toISOString(),
+        }).eq("id", customerMatch.id);
+        updateIndexAfterNameChange(index, customerMatch, name, source);
+      }
+      await linkSourceToCustomer(admin, customerMatch.id, source, externalId, email, name, importId);
+      updateIndexAfterLink(index, source, externalId, email, customerMatch.id, customerMatch);
+      return { customerId: customerMatch.id, isNew: false, matchedBy: "email" };
+    }
+
+    // Email match — customer_sources external_email
+    const extMatch = index.extEmailMap.get(emailKey);
+    if (extMatch) {
+      // Apply name precedence on source-email match
+      if (name) {
+        const { data: existCust } = await admin
+          .from("customers")
+          .select("full_name, name_source")
+          .eq("id", extMatch.customerId)
+          .single();
+        const nameIsPlaceholder2 = existCust?.full_name && isPlaceholderName(existCust.full_name, email);
+        if (existCust && (!existCust.full_name || nameIsPlaceholder2 || shouldUpdateName(existCust.name_source, source))) {
+          await admin.from("customers").update({
+            full_name: name, name_source: source, updated_at: new Date().toISOString(),
+          }).eq("id", extMatch.customerId);
+          // Update name in index if customer record exists
+          if (extMatch.customer) {
+            updateIndexAfterNameChange(index, extMatch.customer, name, source);
+          }
+        }
+      }
+      await linkSourceToCustomer(admin, extMatch.customerId, source, externalId, email, name, importId);
+      updateIndexAfterLink(index, source, externalId, email, extMatch.customerId, extMatch.customer);
+      return { customerId: extMatch.customerId, isNew: false, matchedBy: "email" };
+    }
+  }
+
+  // 3. Phone match
+  const normalizedPhone = normalizePhone(phone);
+  if (normalizedPhone) {
+    const phoneMatches = index.phoneMap.get(normalizedPhone);
+    if (phoneMatches && phoneMatches.length === 1) {
+      await linkSourceToCustomer(admin, phoneMatches[0].id, source, externalId, email, name, importId);
+      updateIndexAfterLink(index, source, externalId, email, phoneMatches[0].id, phoneMatches[0]);
+      return { customerId: phoneMatches[0].id, isNew: false, matchedBy: "phone" };
+    }
+    // Multiple phone matches — don't auto-merge, fall through
+  }
+
+  // 4. Name match
+  if (name) {
+    const nameMatches = index.nameMap.get(name.toLowerCase());
+    if (nameMatches && nameMatches.length === 1) {
+      const existingCustomer = nameMatches[0];
+      if (existingCustomer.email && email && existingCustomer.email !== email) {
+        const newCustomerId = await createCustomer(admin, email, name, phone, source);
+        await linkSourceToCustomer(admin, newCustomerId, source, externalId, email, name, importId);
+        await flagConflict(admin, existingCustomer.id, newCustomerId, "name", name, 0.6);
+        const newRec: CustomerRecord = { id: newCustomerId, full_name: name, email, phone: phone ?? null, name_source: source };
+        addToIndex(index, newRec);
+        updateIndexAfterLink(index, source, externalId, email, newCustomerId, newRec);
+        return { customerId: newCustomerId, isNew: true, matchedBy: "name" };
+      }
+    }
+  }
+
+  // 5. No match — create new customer
+  const newCustomerId = await createCustomer(admin, email, name, phone, source);
+  await linkSourceToCustomer(admin, newCustomerId, source, externalId, email, name, importId);
+  const newRec: CustomerRecord = { id: newCustomerId, full_name: name, email, phone: phone ?? null, name_source: source };
+  addToIndex(index, newRec);
+  updateIndexAfterLink(index, source, externalId, email, newCustomerId, newRec);
+  return { customerId: newCustomerId, isNew: true, matchedBy: "none" };
+}
+
+/**
+ * Same cascade as matchCRMCustomer() but uses CustomerIndex for O(1) lookups.
+ * Still writes to DB for creates. Updates index after creates.
+ */
+export async function matchCRMCustomerFast(
+  admin: SupabaseClient,
+  index: CustomerIndex,
+  email: string | null,
+  phone: string | null,
+  memberId: string | null,
+  name: string | null
+): Promise<{ customerId: string; isNew: boolean }> {
+  // 1. Email lookup
+  if (email) {
+    const match = index.emailMap.get(email.trim().toLowerCase());
+    if (match) return { customerId: match.id, isNew: false };
+  }
+
+  // 2. Phone lookup
+  if (phone) {
+    const norm = normalizePhone(phone);
+    if (norm) {
+      const phoneMatches = index.phoneMap.get(norm);
+      if (phoneMatches && phoneMatches.length === 1) {
+        return { customerId: phoneMatches[0].id, isNew: false };
+      }
+    }
+  }
+
+  // 3. Member ID lookup (reuse existing POS membership links)
+  if (memberId) {
+    const match = index.sourceIdMap.get(`pos:${memberId}`);
+    if (match) return { customerId: match.customerId, isNew: false };
+  }
+
+  // 4. No match — create new customer
+  const customerId = await createCustomer(admin, email, name, phone);
+  const newRec: CustomerRecord = { id: customerId, full_name: name, email, phone: phone ?? null };
+  addToIndex(index, newRec);
+  return { customerId, isNew: true };
+}
+
+// ─── Index update helpers ─────────────────────────────────────────
+
+/** Add a new customer record to all relevant index maps. */
+function addToIndex(index: CustomerIndex, rec: CustomerRecord): void {
+  if (rec.email) index.emailMap.set(rec.email.trim().toLowerCase(), rec);
+  if (rec.phone) {
+    const norm = normalizePhone(rec.phone);
+    if (norm) {
+      const arr = index.phoneMap.get(norm) ?? [];
+      arr.push(rec);
+      index.phoneMap.set(norm, arr);
+    }
+  }
+  if (rec.full_name) {
+    const key = rec.full_name.toLowerCase();
+    const arr = index.nameMap.get(key) ?? [];
+    arr.push(rec);
+    index.nameMap.set(key, arr);
+  }
+}
+
+/** Update sourceIdMap and extEmailMap after linking a source. */
+function updateIndexAfterLink(
+  index: CustomerIndex,
+  source: SourceType,
+  externalId: string,
+  email: string | null,
+  customerId: string,
+  customer: CustomerRecord | null
+): void {
+  if (externalId) {
+    index.sourceIdMap.set(`${source}:${externalId}`, { customerId, customer });
+  }
+  if (email) {
+    index.extEmailMap.set(email.trim().toLowerCase(), { customerId, customer });
+  }
+}
+
+/** Update nameMap after a name change on an existing customer. */
+function updateIndexAfterNameChange(
+  index: CustomerIndex,
+  rec: CustomerRecord,
+  newName: string,
+  newSource: string
+): void {
+  // Remove from old name entry
+  if (rec.full_name) {
+    const oldKey = rec.full_name.toLowerCase();
+    const arr = index.nameMap.get(oldKey);
+    if (arr) {
+      const filtered = arr.filter(r => r.id !== rec.id);
+      if (filtered.length === 0) index.nameMap.delete(oldKey);
+      else index.nameMap.set(oldKey, filtered);
+    }
+  }
+  // Mutate rec in place (shared reference across maps)
+  rec.full_name = newName;
+  rec.name_source = newSource;
+  // Add to new name entry
+  const newKey = newName.toLowerCase();
+  const arr = index.nameMap.get(newKey) ?? [];
+  arr.push(rec);
+  index.nameMap.set(newKey, arr);
 }
