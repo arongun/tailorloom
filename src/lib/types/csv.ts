@@ -121,6 +121,12 @@ export interface StitchPreviewRow {
   enrichableFields: EnrichableField[];
   rawRow?: Record<string, string>;
   flagReason?: string;
+  flagIssues?: Array<{
+    severity: "warning" | "error";
+    message: string;
+    field?: string;
+    value?: string;
+  }>;
 }
 
 export type StitchDecision =

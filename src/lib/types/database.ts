@@ -3,7 +3,7 @@
 
 export type SourceType = "stripe" | "calendly" | "passline" | "pos" | "wetravel" | "manual" | "crm" | "attribution";
 export type ImportStatus = "pending" | "processing" | "completed" | "failed" | "skipped" | "reverted";
-export type PaymentStatus = "succeeded" | "pending" | "failed" | "refunded" | "approved" | "void";
+export type PaymentStatus = "succeeded" | "pending" | "failed" | "refunded" | "disputed" | "approved" | "void";
 export type BookingStatus = "scheduled" | "completed" | "cancelled" | "no_show" | "confirmed" | "rescheduled";
 export type ConflictStatus = "pending" | "merged" | "dismissed" | "split";
 

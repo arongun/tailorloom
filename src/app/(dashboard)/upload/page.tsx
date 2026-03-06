@@ -46,7 +46,7 @@ import {
   loadUploadSession,
   clearUploadSession,
 } from "@/lib/upload-session";
-import type { MapperRestoredData } from "@/lib/upload-session";
+import type { MapperRestoredData, MultiFileSessionEntry } from "@/lib/upload-session";
 
 interface MultiFileQueueEntry {
   file: File;
@@ -82,6 +82,11 @@ const STEP_LABELS: Record<Step, string> = {
 export default function UploadPage() {
   const [step, setStep] = useState<Step>(1);
 
+  // Scroll to top on step change
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [step]);
+
   // Step 1 — data from UploadMapper
   const mapperData = useRef<{
     source: SourceType;
@@ -110,35 +115,102 @@ export default function UploadPage() {
   const [multiFileQueue, setMultiFileQueue] = useState<MultiFileQueueEntry[] | null>(null);
   const [multiImporting, setMultiImporting] = useState(false);
   const [reviewingIndex, setReviewingIndex] = useState<number | null>(null);
+  const [multiImportStarted, setMultiImportStarted] = useState(false);
+  const [importingFileIndex, setImportingFileIndex] = useState<number | null>(null);
+  const [importingFileStart, setImportingFileStart] = useState<number>(0);
   const addMoreInputRef = useRef<HTMLInputElement>(null);
+  const multiImportAbortRef = useRef(false);
+
+  // Scroll to top when switching between multi-file review files
+  useEffect(() => {
+    if (reviewingIndex !== null) window.scrollTo({ top: 0 });
+  }, [reviewingIndex]);
 
   // Session persistence
   const [restoredMapperData, setRestoredMapperData] =
     useState<MapperRestoredData | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
 
-  // Restore session on mount
+  // Per-file import progress: eased value for the currently-importing file
+  const [fileImportProgress, setFileImportProgress] = useState(0);
   useEffect(() => {
-    const session = loadUploadSession();
-    if (session?.mapper) {
-      mapperData.current = {
-        source: session.mapper.source,
-        file: new File([], session.mapper.fileName),
-        content: session.mapper.content,
-        mapping: session.mapper.mapping,
-        headers: session.mapper.headers,
-        totalRows: session.mapper.totalRows,
-      };
-      setIsMapperReady(true);
-      setRestoredMapperData(session.mapper);
-
-      if (session.step === 2 && session.stitch) {
-        setStitchPreviewResult(session.stitch.preview);
-        setStitchDecisions(session.stitch.decisions);
-        setStep(2);
-      }
+    if (importingFileIndex === null) {
+      setFileImportProgress(0);
+      return;
     }
-    setSessionLoaded(true);
+    const HALF_LIFE = 10_000;
+    const RATE = Math.LN2 / HALF_LIFE;
+    const INTERVAL = 200;
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - importingFileStart;
+      setFileImportProgress(100 * (1 - Math.exp(-RATE * elapsed)));
+    }, INTERVAL);
+    return () => clearInterval(timer);
+  }, [importingFileIndex, importingFileStart]);
+
+  // Restore session on mount (async — load is now async due to IndexedDB)
+  useEffect(() => {
+    (async () => {
+      try {
+        const session = await loadUploadSession();
+        if (!session) {
+          setSessionLoaded(true);
+          return;
+        }
+
+        // Multi-file restore takes priority
+        if (session.multiQueue && session.multiContents) {
+          const restored: MultiFileQueueEntry[] = session.multiQueue.map((entry, i) => {
+            const content = session.multiContents?.[i] ?? "";
+            const stitchResult = session.multiStitchResults?.[i] ?? undefined;
+            return {
+              file: new File([content], entry.fileName),
+              content,
+              source: entry.source,
+              headers: entry.headers,
+              totalRows: entry.totalRows,
+              needsSourcePick: entry.needsSourcePick,
+              detectionResults: entry.detectionResults,
+              mapping: entry.mapping,
+              stitchDecisions: entry.stitchDecisions,
+              preflight: entry.preflight,
+              reviewed: entry.reviewed,
+              status: entry.status === "error" ? "error" : (stitchResult ? "ready" : "pending"),
+              stitchResult,
+              error: entry.error,
+            };
+          });
+          setMultiFileQueue(restored);
+          setReviewingIndex(session.multiReviewingIndex);
+          setSessionLoaded(true);
+          return;
+        }
+
+        // Single-file restore
+        if (session.mapper) {
+          mapperData.current = {
+            source: session.mapper.source,
+            schemaKey: session.mapper.schemaKey,
+            file: new File([session.mapper.content], session.mapper.fileName),
+            content: session.mapper.content,
+            mapping: session.mapper.mapping,
+            headers: session.mapper.headers,
+            totalRows: session.mapper.totalRows,
+          };
+          setIsMapperReady(true);
+          setRestoredMapperData(session.mapper);
+
+          if (session.step === 2 && session.stitch) {
+            setStitchPreviewResult(session.stitch.preview);
+            setStitchDecisions(session.stitch.decisions);
+            setStep(2);
+          }
+        }
+      } catch {
+        // Failed to restore — start fresh
+      }
+      setSessionLoaded(true);
+    })();
   }, []);
 
   // ─── Handlers ──────────────────────────────────────────
@@ -157,7 +229,7 @@ export default function UploadPage() {
       setIsMapperReady(true);
 
       saveUploadSession({
-        version: 1,
+        version: 2,
         savedAt: Date.now(),
         step: 1,
         mapper: {
@@ -165,11 +237,14 @@ export default function UploadPage() {
           fileSize: data.file.size,
           content: data.content,
           source: data.source,
+          schemaKey: data.schemaKey,
           mapping: data.mapping,
           headers: data.headers,
           totalRows: data.totalRows,
         },
         stitch: null,
+        multiQueue: null,
+        multiReviewingIndex: null,
       });
     },
     []
@@ -178,7 +253,7 @@ export default function UploadPage() {
   const handleMapperClear = useCallback(() => {
     mapperData.current = null;
     setIsMapperReady(false);
-    clearUploadSession();
+    clearUploadSession().catch(() => {});
     setRestoredMapperData(null);
   }, []);
 
@@ -206,7 +281,7 @@ export default function UploadPage() {
     if (step !== 2 || !stitchPreview || !mapperData.current) return;
     const data = mapperData.current;
     saveUploadSession({
-      version: 1,
+      version: 2,
       savedAt: Date.now(),
       step: 2,
       mapper: {
@@ -214,11 +289,14 @@ export default function UploadPage() {
         fileSize: data.file.size,
         content: data.content,
         source: data.source,
+        schemaKey: data.schemaKey,
         mapping: data.mapping,
         headers: data.headers,
         totalRows: data.totalRows,
       },
       stitch: { preview: stitchPreview, decisions: stitchDecisions },
+      multiQueue: null,
+      multiReviewingIndex: null,
     });
   }, [stitchDecisions, step, stitchPreview]);
 
@@ -262,7 +340,7 @@ export default function UploadPage() {
       setStep(2);
 
       saveUploadSession({
-        version: 1,
+        version: 2,
         savedAt: Date.now(),
         step: 2,
         mapper: {
@@ -270,11 +348,14 @@ export default function UploadPage() {
           fileSize: data.file.size,
           content: data.content,
           source: data.source,
+          schemaKey: data.schemaKey,
           mapping: data.mapping,
           headers: data.headers,
           totalRows: data.totalRows,
         },
         stitch: { preview: stitchResult, decisions: defaults },
+        multiQueue: null,
+        multiReviewingIndex: null,
       });
     } catch (err) {
       toast.error(
@@ -337,7 +418,7 @@ export default function UploadPage() {
       });
     } finally {
       setIsImporting(false);
-      clearUploadSession();
+      clearUploadSession().catch(() => {});
     }
   };
 
@@ -348,7 +429,7 @@ export default function UploadPage() {
     setStitchPreviewResult(null);
     setStitchDecisions({});
     setImportResult(null);
-    clearUploadSession();
+    clearUploadSession().catch(() => {});
     setRestoredMapperData(null);
   };
 
@@ -365,6 +446,53 @@ export default function UploadPage() {
     });
     setMultiFileQueue(entriesWithMapping);
   }, []);
+
+  // Persist multi-file queue changes
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!multiFileQueue) return;
+    // Skip saving if all terminal
+    if (multiFileQueue.every((e) => e.status === "done" || e.status === "error")) return;
+
+    // Debounce to avoid thrashing IndexedDB on rapid state updates
+    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    persistTimerRef.current = setTimeout(() => {
+      const entries: MultiFileSessionEntry[] = multiFileQueue.map((e) => ({
+        fileName: e.file.name,
+        fileSize: e.file.size,
+        source: e.source,
+        headers: e.headers,
+        totalRows: e.totalRows,
+        needsSourcePick: e.needsSourcePick,
+        detectionResults: e.detectionResults,
+        mapping: e.mapping,
+        stitchDecisions: e.stitchDecisions,
+        preflight: e.preflight,
+        reviewed: e.reviewed,
+        // Normalize transient statuses
+        status: e.status === "previewing" ? "pending" : e.status === "importing" ? "ready" : (e.status === "done" ? "ready" : e.status) as MultiFileSessionEntry["status"],
+        error: e.error,
+      }));
+
+      saveUploadSession({
+        version: 2,
+        savedAt: Date.now(),
+        step: 1,
+        mapper: null,
+        stitch: null,
+        multiQueue: entries,
+        multiReviewingIndex: reviewingIndex,
+        multiContents: multiFileQueue.map((e) => e.content),
+        multiStitchResults: multiFileQueue.map((e) => e.stitchResult ?? null),
+      }).catch(() => {
+        // Non-fatal — toast only on first failure
+      });
+    }, 500);
+
+    return () => {
+      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+    };
+  }, [multiFileQueue, reviewingIndex]);
 
   const handleMultiSourcePick = useCallback((index: number, source: SourceType) => {
     setMultiFileQueue((prev) => {
@@ -492,13 +620,19 @@ export default function UploadPage() {
 
   const handleMultiImportAll = useCallback(async () => {
     if (!multiFileQueue) return;
+    multiImportAbortRef.current = false;
     setMultiImporting(true);
+    setMultiImportStarted(true);
 
     for (let i = 0; i < multiFileQueue.length; i++) {
+      if (multiImportAbortRef.current) break;
+
       const entry = multiFileQueue[i];
       if (!entry.source || entry.status === "done" || entry.status === "error") continue;
 
       // Set "importing" status and yield
+      setImportingFileIndex(i);
+      setImportingFileStart(Date.now());
       setMultiFileQueue((prev) => {
         if (!prev) return prev;
         const next = [...prev];
@@ -506,6 +640,8 @@ export default function UploadPage() {
         return next;
       });
       await new Promise((r) => setTimeout(r, 50));
+
+      if (multiImportAbortRef.current) break;
 
       try {
         const mapping = entry.mapping;
@@ -527,6 +663,8 @@ export default function UploadPage() {
           stitchDecisions: entry.stitchDecisions ?? {},
         });
 
+        if (multiImportAbortRef.current) break;
+
         setMultiFileQueue((prev) => {
           if (!prev) return prev;
           const next = [...prev];
@@ -534,6 +672,8 @@ export default function UploadPage() {
           return next;
         });
       } catch (err) {
+        if (multiImportAbortRef.current) break;
+
         setMultiFileQueue((prev) => {
           if (!prev) return prev;
           const next = [...prev];
@@ -543,7 +683,11 @@ export default function UploadPage() {
       }
     }
 
+    if (multiImportAbortRef.current) return;
+
+    setImportingFileIndex(null);
     setMultiImporting(false);
+    clearUploadSession().catch(() => {});
 
     // Read final state for toast
     setMultiFileQueue((prev) => {
@@ -613,6 +757,17 @@ export default function UploadPage() {
     !!mapperData.current &&
     Object.keys(mapperData.current.mapping).length > 0;
 
+  // Derive step for multi-file mode (step indicator only)
+  const displayStep: Step = multiFileQueue
+    ? multiImportStarted
+      ? 3
+      : reviewingIndex !== null
+        ? 2
+        : multiFileQueue.some((e) => e.stitchResult)
+          ? 2
+          : 1
+    : step;
+
   // ─── Render ────────────────────────────────────────────
 
   if (!sessionLoaded) return null;
@@ -637,14 +792,14 @@ export default function UploadPage() {
               <div
                 className={cn(
                   "flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-semibold transition-all",
-                  s === step
+                  s === displayStep
                     ? "bg-surface-active text-text-on-active"
-                    : s < step
+                    : s < displayStep
                       ? "bg-surface-muted text-text-secondary"
                       : "bg-surface-muted text-text-muted"
                 )}
               >
-                {s < step ? (
+                {s < displayStep ? (
                   <CheckCircle2 className="h-4 w-4" />
                 ) : (
                   s
@@ -653,9 +808,9 @@ export default function UploadPage() {
               <span
                 className={cn(
                   "ml-2 text-[12px] font-medium transition-colors",
-                  s === step
+                  s === displayStep
                     ? "text-text-primary"
-                    : s < step
+                    : s < displayStep
                       ? "text-text-muted"
                       : "text-text-muted"
                 )}
@@ -666,7 +821,7 @@ export default function UploadPage() {
                 <div
                   className={cn(
                     "mx-4 h-px w-10",
-                    s < step ? "bg-text-muted" : "bg-surface-muted"
+                    s < displayStep ? "bg-text-muted" : "bg-surface-muted"
                   )}
                 />
               )}
@@ -778,7 +933,16 @@ export default function UploadPage() {
                             <CheckCircle2 className="h-3 w-3" /> Reviewed
                           </span>
                         )}
-                        {entry.status === "importing" && <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />}
+                        {entry.status === "importing" && (
+                          <div className="flex items-center gap-2 min-w-[100px]">
+                            <div className="flex-1">
+                              <Progress value={importingFileIndex === idx ? fileImportProgress : 0} className="h-1" />
+                            </div>
+                            <span className="text-[10px] text-text-muted tabular-nums w-7 text-right">
+                              {importingFileIndex === idx ? Math.round(fileImportProgress) : 0}%
+                            </span>
+                          </div>
+                        )}
                         {entry.status === "done" && (
                           <span className="text-[11px] text-emerald-600 font-medium">
                             {entry.result?.importedRows} imported
@@ -815,10 +979,17 @@ export default function UploadPage() {
               </div>
             )}
 
+            {/* Import progress summary */}
+            {multiImporting && (
+              <p className="text-[11px] text-text-muted text-center">
+                {multiFileQueue.filter((e) => e.status === "done" || e.status === "error").length} of {multiFileQueue.length} files imported
+              </p>
+            )}
+
             <div className="flex items-center justify-between">
               <Button
                 variant="ghost"
-                onClick={() => { setMultiFileQueue(null); setReviewingIndex(null); }}
+                onClick={() => { multiImportAbortRef.current = true; setMultiFileQueue(null); setReviewingIndex(null); setMultiImportStarted(false); setMultiImporting(false); setImportingFileIndex(null); clearUploadSession().catch(() => {}); }}
                 className="text-[13px] text-text-muted hover:text-text-secondary"
               >
                 Cancel
@@ -881,7 +1052,7 @@ export default function UploadPage() {
                 )}
                 {multiFileQueue.every((e) => e.status === "done" || e.status === "error") && (
                   <Button
-                    onClick={() => { setMultiFileQueue(null); setReviewingIndex(null); }}
+                    onClick={() => { setMultiFileQueue(null); setReviewingIndex(null); setMultiImportStarted(false); setImportingFileIndex(null); clearUploadSession().catch(() => {}); }}
                     className="text-[13px]"
                   >
                     Done
@@ -1175,6 +1346,9 @@ function DetailedImportResultView({
           Stitching identities, writing records, detecting conflicts
         </p>
         <div className="mt-6 w-64">
+          <p className="text-[12px] text-text-muted text-center mb-1.5 tabular-nums">
+            {Math.round(progress)}%
+          </p>
           <Progress value={progress} className="h-1.5" />
         </div>
       </div>

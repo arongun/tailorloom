@@ -626,6 +626,10 @@ export async function previewStitchingFast(options: {
         enrichableFields: [],
         rawRow,
         flagReason: rowErrors.map((e) => e.message).join("; "),
+        flagIssues: [
+          ...rowWarnings.map((w) => ({ severity: "warning" as const, message: w.message, field: w.field, value: w.value })),
+          ...rowErrors.map((e) => ({ severity: "error" as const, message: e.message, field: e.field, value: e.value })),
+        ],
       });
       continue;
     }
@@ -651,10 +655,10 @@ export async function previewStitchingFast(options: {
         flagMsg = "No usable identifier (need email, phone, or member_id)";
       }
     } else if (options.source === "attribution") {
-      // Attribution requires email or phone
-      if (!email && !phone) {
+      // Attribution requires email, phone, or platform ID
+      if (!email && !phone && !stitchExternalId) {
         noIdentifier = true;
-        flagMsg = "No usable identifier (need email or phone)";
+        flagMsg = "No usable identifier (need email, phone, or platform ID)";
       }
     } else {
       // Transaction sources use full stitch cascade — only flag if nothing at all
@@ -680,6 +684,10 @@ export async function previewStitchingFast(options: {
         enrichableFields: [],
         rawRow,
         flagReason: flagMsg,
+        flagIssues: [
+          ...rowWarnings.map((w) => ({ severity: "warning" as const, message: w.message, field: w.field, value: w.value })),
+          { severity: "error" as const, message: flagMsg },
+        ],
       });
       continue;
     }
@@ -1105,11 +1113,13 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
 
   // ─── CRM import path ────────────────────────────────────
   if (options.source === "crm") {
+    // Collect CRM enrichment records for batch insert
+    const crmBatch: Record<string, unknown>[] = [];
+
     for (let i = 0; i < parsed.rows.length; i++) {
       const rawRow = parsed.rows[i];
       const mapped = applyMapping(rawRow, mapping);
       const { errors: rowErrors, warnings: rowWarnings } = validateMappedRow(mapped, schema, i + 1);
-      if (rowWarnings.length > 0) errors.push(...rowWarnings.map((w) => ({ ...w, severity: "warning" as const })));
       if (rowErrors.length > 0) { errors.push(...rowErrors); errorRows++; continue; }
 
       const email = mapped.email ?? null;
@@ -1119,10 +1129,17 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
 
       // Row-level identifier check
       if (!email && !phone && !memberId) {
-        errors.push({ row: i + 1, field: "", message: "No usable identifier (need email, phone, or member_id)" });
+        const context = rowWarnings.filter((w) => w.field === "email" && w.value).map((w) => w.value).join(", ");
+        const msg = context
+          ? `No usable identifier — email stripped (possible typo: ${context})`
+          : "No usable identifier (need email, phone, or member_id)";
+        errors.push({ row: i + 1, field: "", message: msg });
         errorRows++;
         continue;
       }
+
+      // Push warnings only for rows that will actually be imported
+      if (rowWarnings.length > 0) errors.push(...rowWarnings.map((w) => ({ ...w, severity: "warning" as const })));
 
       try {
         const { customerId, isNew } = await matchCRMCustomerFast(admin, customerIndex, email, phone, memberId, name);
@@ -1169,19 +1186,33 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
           }
         }
 
-        // Insert CRM enrichment provenance record
-        await admin.from("crm_enrichments").insert({
+        // Collect for batch insert
+        crmBatch.push({
           org_id: DEFAULT_ORG_ID,
           customer_id: customerId,
           import_id: importId,
           enriched_fields: enrichedFields,
           raw_data: rawRow,
         });
-
-        importedRows++;
       } catch (err) {
         errors.push({ row: i + 1, field: "", message: err instanceof Error ? err.message : "Unknown error" });
         errorRows++;
+      }
+    }
+
+    // Batch insert CRM enrichment records
+    const CRM_BATCH_SIZE = 200;
+    for (let b = 0; b < crmBatch.length; b += CRM_BATCH_SIZE) {
+      const chunk = crmBatch.slice(b, b + CRM_BATCH_SIZE);
+      const { error: batchErr } = await admin.from("crm_enrichments").insert(chunk);
+      if (batchErr) {
+        for (const rec of chunk) {
+          const { error: rowErr } = await admin.from("crm_enrichments").insert(rec);
+          if (rowErr) errorRows++;
+          else importedRows++;
+        }
+      } else {
+        importedRows += chunk.length;
       }
     }
   }
@@ -1212,11 +1243,19 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
       }
     }
 
+    // Batch name updates: collect all unique name updates first, then apply in one pass
+    const nameUpdates = new Map<string, { id: string; name: string }>();
+    // Collect new customers to batch-create
+    const newCustomerRows: { email: string | null; name: string | null; phone: string | null; rowIndex: number }[] = [];
+    // Collect attribution records for batch insert
+    const attrBatch: Record<string, unknown>[] = [];
+    // Track which rows succeeded for counting
+    const rowResults: { rowIndex: number; isNew: boolean }[] = [];
+
     for (let i = 0; i < parsed.rows.length; i++) {
       const rawRow = parsed.rows[i];
       const mapped = applyMapping(rawRow, mapping);
       const { errors: rowErrors, warnings: rowWarnings } = validateMappedRow(mapped, attrSchema, i + 1);
-      if (rowWarnings.length > 0) errors.push(...rowWarnings.map((w) => ({ ...w, severity: "warning" as const })));
       if (rowErrors.length > 0) { errors.push(...rowErrors); errorRows++; continue; }
 
       const email = mapped.email ?? null;
@@ -1225,125 +1264,158 @@ export async function uploadCSV(options: UploadOptions): Promise<ImportResultDet
 
       // Row-level identifier check
       if (!email && !phone) {
-        errors.push({ row: i + 1, field: "", message: "No usable identifier (need email or phone)" });
+        const context = rowWarnings.filter((w) => w.field === "email" && w.value).map((w) => w.value).join(", ");
+        const msg = context
+          ? `No usable identifier — email stripped (possible typo: ${context})`
+          : "No usable identifier (need email or phone)";
+        errors.push({ row: i + 1, field: "", message: msg });
         errorRows++;
         continue;
       }
 
-      try {
-        let customerId: string | null = null;
-        let isNew = false;
+      // Push warnings only for rows that will actually be imported
+      if (rowWarnings.length > 0) errors.push(...rowWarnings.map((w) => ({ ...w, severity: "warning" as const })));
 
-        // 1. Email match (in-memory)
-        if (email) {
-          const key = email.trim().toLowerCase();
-          const match = attrEmailIndex.get(key);
-          if (match) {
-            customerId = match.id;
-            if (name && (!match.full_name || shouldUpdateName(match.name_source, "attribution"))) {
-              await admin.from("customers").update({
-                full_name: name,
-                name_source: "attribution",
-                updated_at: new Date().toISOString(),
-              }).eq("id", match.id);
-              attrEmailIndex.set(key, { ...match, full_name: name, name_source: "attribution" });
-            }
+      let customerId: string | null = null;
+      let isNew = false;
+
+      // 1. Email match (in-memory)
+      if (email) {
+        const key = email.trim().toLowerCase();
+        const match = attrEmailIndex.get(key);
+        if (match) {
+          customerId = match.id;
+          if (name && (!match.full_name || shouldUpdateName(match.name_source, "attribution"))) {
+            nameUpdates.set(match.id, { id: match.id, name });
+            attrEmailIndex.set(key, { ...match, full_name: name, name_source: "attribution" });
           }
         }
-
-        // 2. Phone match (in-memory)
-        if (!customerId && phone) {
-          const norm = normalizePhone(phone);
-          if (norm) {
-            const matchId = attrPhoneIndex.get(norm);
-            if (matchId) customerId = matchId;
-          }
-        }
-
-        // 3. No match — create new customer
-        if (!customerId) {
-          const { data: newCust, error: newCustErr } = await admin
-            .from("customers")
-            .insert({
-              org_id: DEFAULT_ORG_ID,
-              email,
-              full_name: name,
-              phone: phone ?? null,
-              name_source: name ? "attribution" : null,
-            })
-            .select("id")
-            .single();
-          if (newCustErr) throw new Error(`Failed to create customer: ${newCustErr.message}`);
-          const newId = newCust.id;
-          customerId = newId;
-          isNew = true;
-          // Update indexes for subsequent rows
-          if (email) attrEmailIndex.set(email.trim().toLowerCase(), { id: newId, full_name: name, name_source: "attribution" });
-          if (phone) {
-            const norm = normalizePhone(phone);
-            if (norm) attrPhoneIndex.set(norm, newId);
-          }
-        }
-
-        if (isNew) newCustomersCreated++;
-        else matchedByEmail++;
-
-        // Build insert record with all fields based on attribution type
-        const insertRecord: Record<string, unknown> = {
-          org_id: DEFAULT_ORG_ID,
-          customer_id: customerId,
-          import_id: importId,
-          attribution_type: attributionType,
-          conversion_id: mapped.conversion_id ?? null,
-          conversion_source: mapped.conversion_source ?? null,
-          full_name: name,
-          product: mapped.product ?? null,
-          revenue_usd: mapped.revenue_usd ? (parseCurrency(mapped.revenue_usd) ?? null) : null,
-          conversion_date: mapped.conversion_date ?? null,
-          first_touch_channel: mapped.first_touch_channel ?? null,
-          referral_source: mapped.referral_source ?? null,
-          campaign: mapped.campaign ?? mapped.first_touch_campaign ?? null,
-          acquisition_date: mapped.acquisition_date ?? mapped.conversion_date ?? null,
-          raw_data: rawRow,
-        };
-
-        if (isJourneys) {
-          // Touchpoint-specific fields
-          insertRecord.touch_id = mapped.touch_id ?? null;
-          insertRecord.touch_number = mapped.touch_number ? parseInt(mapped.touch_number, 10) || null : null;
-          insertRecord.total_touches = mapped.total_touches ? parseInt(mapped.total_touches, 10) || null : null;
-          insertRecord.touch_position = mapped.touch_position ?? null;
-          insertRecord.channel = mapped.channel ?? null;
-          insertRecord.utm_source = mapped.utm_source ?? null;
-          insertRecord.utm_medium = mapped.utm_medium ?? null;
-          insertRecord.utm_campaign = mapped.utm_campaign ?? null;
-          insertRecord.referrer = mapped.referrer ?? null;
-          insertRecord.touch_date = mapped.touch_date ?? null;
-          insertRecord.days_before_conversion = mapped.days_before_conversion ? parseInt(mapped.days_before_conversion, 10) || null : null;
-          insertRecord.first_touch_credit = mapped.first_touch_credit ? (parseCurrency(mapped.first_touch_credit) ?? null) : null;
-          insertRecord.first_touch_revenue = mapped.first_touch_revenue ? (parseCurrency(mapped.first_touch_revenue) ?? null) : null;
-        } else {
-          // Summary-specific fields
-          insertRecord.n_touchpoints = mapped.n_touchpoints ? parseInt(mapped.n_touchpoints, 10) || null : null;
-          insertRecord.journey_span_days = mapped.journey_span_days ? parseInt(mapped.journey_span_days, 10) || null : null;
-          insertRecord.first_touch_utm_source = mapped.first_touch_utm_source ?? null;
-          insertRecord.first_touch_utm_medium = mapped.first_touch_utm_medium ?? null;
-          insertRecord.first_touch_campaign = mapped.first_touch_campaign ?? null;
-          insertRecord.first_touch_referrer = mapped.first_touch_referrer ?? null;
-          insertRecord.first_touch_date = mapped.first_touch_date ?? null;
-          insertRecord.last_touch_channel = mapped.last_touch_channel ?? null;
-          insertRecord.last_touch_utm_source = mapped.last_touch_utm_source ?? null;
-          insertRecord.last_touch_date = mapped.last_touch_date ?? null;
-          insertRecord.attributed_revenue_usd = mapped.attributed_revenue_usd ? (parseCurrency(mapped.attributed_revenue_usd) ?? null) : null;
-        }
-
-        await admin.from("customer_attribution").insert(insertRecord);
-
-        importedRows++;
-      } catch (err) {
-        errors.push({ row: i + 1, field: "", message: err instanceof Error ? err.message : "Unknown error" });
-        errorRows++;
       }
+
+      // 2. Phone match (in-memory)
+      if (!customerId && phone) {
+        const norm = normalizePhone(phone);
+        if (norm) {
+          const matchId = attrPhoneIndex.get(norm);
+          if (matchId) customerId = matchId;
+        }
+      }
+
+      // 3. No match — create new customer (sequential, needed for customer_id)
+      if (!customerId) {
+        const { data: newCust, error: newCustErr } = await admin
+          .from("customers")
+          .insert({
+            org_id: DEFAULT_ORG_ID,
+            email,
+            full_name: name,
+            phone: phone ?? null,
+            name_source: name ? "attribution" : null,
+          })
+          .select("id")
+          .single();
+        if (newCustErr) {
+          errors.push({ row: i + 1, field: "", message: `Failed to create customer: ${newCustErr.message}` });
+          errorRows++;
+          continue;
+        }
+        const newId = newCust.id;
+        customerId = newId;
+        isNew = true;
+        if (email) attrEmailIndex.set(email.trim().toLowerCase(), { id: newId, full_name: name, name_source: "attribution" });
+        if (phone) {
+          const norm = normalizePhone(phone);
+          if (norm) attrPhoneIndex.set(norm, newId);
+        }
+      }
+
+      rowResults.push({ rowIndex: i + 1, isNew });
+
+      // Build insert record
+      const insertRecord: Record<string, unknown> = {
+        org_id: DEFAULT_ORG_ID,
+        customer_id: customerId,
+        import_id: importId,
+        attribution_type: attributionType,
+        conversion_id: mapped.conversion_id ?? null,
+        conversion_source: mapped.conversion_source ?? null,
+        full_name: name,
+        product: mapped.product ?? null,
+        revenue_usd: mapped.revenue_usd ? (parseCurrency(mapped.revenue_usd) ?? null) : null,
+        conversion_date: mapped.conversion_date ?? null,
+        first_touch_channel: mapped.first_touch_channel ?? null,
+        referral_source: mapped.referral_source ?? null,
+        campaign: mapped.campaign ?? mapped.first_touch_campaign ?? null,
+        acquisition_date: mapped.acquisition_date ?? mapped.conversion_date ?? null,
+        raw_data: rawRow,
+      };
+
+      if (isJourneys) {
+        insertRecord.touch_id = mapped.touch_id ?? null;
+        insertRecord.touch_number = mapped.touch_number ? parseInt(mapped.touch_number, 10) || null : null;
+        insertRecord.total_touches = mapped.total_touches ? parseInt(mapped.total_touches, 10) || null : null;
+        insertRecord.touch_position = mapped.touch_position ?? null;
+        insertRecord.channel = mapped.channel ?? null;
+        insertRecord.utm_source = mapped.utm_source ?? null;
+        insertRecord.utm_medium = mapped.utm_medium ?? null;
+        insertRecord.utm_campaign = mapped.utm_campaign ?? null;
+        insertRecord.referrer = mapped.referrer ?? null;
+        insertRecord.touch_date = mapped.touch_date ?? null;
+        insertRecord.days_before_conversion = mapped.days_before_conversion ? parseInt(mapped.days_before_conversion, 10) || null : null;
+        insertRecord.first_touch_credit = mapped.first_touch_credit ? (parseCurrency(mapped.first_touch_credit) ?? null) : null;
+        insertRecord.first_touch_revenue = mapped.first_touch_revenue ? (parseCurrency(mapped.first_touch_revenue) ?? null) : null;
+      } else {
+        insertRecord.n_touchpoints = mapped.n_touchpoints ? parseInt(mapped.n_touchpoints, 10) || null : null;
+        insertRecord.journey_span_days = mapped.journey_span_days ? parseInt(mapped.journey_span_days, 10) || null : null;
+        insertRecord.first_touch_utm_source = mapped.first_touch_utm_source ?? null;
+        insertRecord.first_touch_utm_medium = mapped.first_touch_utm_medium ?? null;
+        insertRecord.first_touch_campaign = mapped.first_touch_campaign ?? null;
+        insertRecord.first_touch_referrer = mapped.first_touch_referrer ?? null;
+        insertRecord.first_touch_date = mapped.first_touch_date ?? null;
+        insertRecord.last_touch_channel = mapped.last_touch_channel ?? null;
+        insertRecord.last_touch_utm_source = mapped.last_touch_utm_source ?? null;
+        insertRecord.last_touch_date = mapped.last_touch_date ?? null;
+        insertRecord.attributed_revenue_usd = mapped.attributed_revenue_usd ? (parseCurrency(mapped.attributed_revenue_usd) ?? null) : null;
+      }
+
+      attrBatch.push(insertRecord);
+    }
+
+    // Batch name updates (parallel)
+    if (nameUpdates.size > 0) {
+      const updatePromises = Array.from(nameUpdates.values()).map(({ id, name: n }) =>
+        admin.from("customers").update({
+          full_name: n, name_source: "attribution", updated_at: new Date().toISOString(),
+        }).eq("id", id)
+      );
+      await Promise.all(updatePromises);
+    }
+
+    // Batch insert attribution records in chunks of 200
+    const BATCH_SIZE = 200;
+    for (let b = 0; b < attrBatch.length; b += BATCH_SIZE) {
+      const chunk = attrBatch.slice(b, b + BATCH_SIZE);
+      const { error: batchErr } = await admin.from("customer_attribution").insert(chunk);
+      if (batchErr) {
+        // Fallback: insert individually to find which rows fail
+        for (let j = 0; j < chunk.length; j++) {
+          const { error: rowErr } = await admin.from("customer_attribution").insert(chunk[j]);
+          if (rowErr) {
+            errors.push({ row: b + j + 1, field: "", message: rowErr.message });
+            errorRows++;
+          } else {
+            importedRows++;
+          }
+        }
+      } else {
+        importedRows += chunk.length;
+      }
+    }
+
+    // Count match types
+    for (const r of rowResults) {
+      if (r.isNew) newCustomersCreated++;
+      else matchedByEmail++;
     }
   }
   // ─── Transaction import path (existing) ──────────────────
@@ -1560,7 +1632,7 @@ async function insertSourceRow(
         source: "stripe",
         amount,
         currency,
-        status: (mapped.status?.toLowerCase() as "succeeded" | "pending" | "failed" | "refunded") ?? "succeeded",
+        status: (mapped.status?.toLowerCase() as "succeeded" | "pending" | "failed" | "refunded" | "disputed") ?? "succeeded",
         payment_date: paymentDate,
         amount_usd: fx.amountUsd,
         fx_rate: fx.rate,

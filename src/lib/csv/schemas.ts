@@ -96,7 +96,7 @@ export const STRIPE_SCHEMA: SourceSchema = {
       type: "enum",
       required: false,
       aliases: ["status", "payment status", "charge status", "outcome"],
-      enumValues: ["succeeded", "pending", "failed", "refunded"],
+      enumValues: ["succeeded", "pending", "failed", "refunded", "disputed"],
       description: "Payment status",
     },
     {

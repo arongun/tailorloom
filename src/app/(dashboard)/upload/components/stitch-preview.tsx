@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Link2,
   UserPlus,
@@ -11,6 +11,7 @@ import {
   Plus,
   SkipForward,
   AlertTriangle,
+  XCircle,
   Pencil,
   Search,
   ArrowRight,
@@ -136,36 +137,22 @@ export function StitchPreview({
 
       {/* Data Enrichment section */}
       {result.enrichmentRows.length > 0 && (
-        <div className="rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50/10 dark:bg-teal-950/20 overflow-hidden">
-          <div className="border-b border-teal-200/60 dark:border-teal-800/60 px-5 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Pencil className="h-4 w-4 text-teal-500" />
-              <p className="text-[13px] font-medium text-teal-800 dark:text-teal-300">
-                Confident Matches + Enrichment — {result.enrichmentRows.length}{" "}
-                {result.enrichmentRows.length === 1 ? "customer" : "customers"} matched
-              </p>
-            </div>
-            <p className="text-[11px] text-teal-600 dark:text-teal-400">
-              Matched by email or ID. You can optionally update their missing fields.
-            </p>
-          </div>
-          <div className="divide-y divide-teal-100 dark:divide-teal-900/40">
-            {result.enrichmentRows.map((row) => (
-              <EnrichmentRow
-                key={row.rowIndex}
-                row={row}
-                decision={
-                  decisions[row.rowIndex] ?? {
-                    action: "accept_enrichment",
-                    targetCustomerId: row.existingCustomerId!,
-                  }
-                }
-                onDecisionChange={(d) => setDecision(row.rowIndex, d)}
-                onPeekCustomer={handlePeekCustomer}
-              />
-            ))}
-          </div>
-        </div>
+        <EnrichmentSection
+          rows={result.enrichmentRows}
+          decisions={decisions}
+          onDecisionChange={(rowIndex, d) => setDecision(rowIndex, d)}
+          onBulkDecision={(action) => {
+            const bulk: StitchDecisions = { ...decisions };
+            for (const row of result.enrichmentRows) {
+              bulk[row.rowIndex] =
+                action === "accept"
+                  ? { action: "accept_enrichment", targetCustomerId: row.existingCustomerId! }
+                  : { action: "skip" };
+            }
+            onDecisionsChange(bulk);
+          }}
+          onPeekCustomer={handlePeekCustomer}
+        />
       )}
 
       {/* Flagged rows — validation errors or missing identifiers */}
@@ -177,38 +164,14 @@ export function StitchPreview({
         />
       )}
 
-      {/* Name review — email matched but name differs */}
+      {/* Name review — email matched but name differs (grouped by customer) */}
       {result.nameReviewRows.length > 0 && (
-        <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50/10 dark:bg-orange-950/20 overflow-hidden">
-          <div className="border-b border-orange-200/60 dark:border-orange-800/60 px-5 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-orange-500" />
-              <p className="text-[13px] font-medium text-orange-800 dark:text-orange-300">
-                Review Name — {result.nameReviewRows.length}{" "}
-                {result.nameReviewRows.length === 1 ? "match" : "matches"} with different names
-              </p>
-            </div>
-            <p className="text-[11px] text-orange-600 dark:text-orange-400">
-              Email matched, but the name in the CSV differs from the existing customer
-            </p>
-          </div>
-          <div className="divide-y divide-orange-100 dark:divide-orange-900/40">
-            {result.nameReviewRows.map((row) => (
-              <NameReviewRow
-                key={row.rowIndex}
-                row={row}
-                decision={
-                  decisions[row.rowIndex] ?? {
-                    action: "merge_keep_name",
-                    targetCustomerId: row.existingCustomerId!,
-                  }
-                }
-                onDecisionChange={(d) => setDecision(row.rowIndex, d)}
-                onPeekCustomer={handlePeekCustomer}
-              />
-            ))}
-          </div>
-        </div>
+        <NameReviewSection
+          rows={result.nameReviewRows}
+          decisions={decisions}
+          onDecisionsChange={onDecisionsChange}
+          onPeekCustomer={handlePeekCustomer}
+        />
       )}
 
       {/* Uncertain matches — user must decide */}
@@ -226,6 +189,59 @@ export function StitchPreview({
               No strong identifier (email/ID) found — matched by name only
             </p>
           </div>
+          {/* Bulk action bar */}
+          {(() => {
+            const allMerge = result.uncertainRows.every((r) => (decisions[r.rowIndex] ?? { action: "create_new" }).action === "merge");
+            const allNew = result.uncertainRows.every((r) => (decisions[r.rowIndex] ?? { action: "create_new" }).action === "create_new");
+            const allSkip = result.uncertainRows.every((r) => (decisions[r.rowIndex] ?? { action: "create_new" }).action === "skip");
+            return (
+          <div className="flex items-center justify-end gap-1.5 px-5 py-2 border-b border-amber-100 dark:border-amber-900/40 bg-amber-50/10 dark:bg-amber-950/10">
+            <span className="text-[11px] text-amber-600 dark:text-amber-400 mr-1">Apply to all:</span>
+            <DecisionButton
+              active={allMerge}
+              onClick={() => {
+                const bulk: StitchDecisions = { ...decisions };
+                for (const row of result.uncertainRows) {
+                  bulk[row.rowIndex] = {
+                    action: "merge",
+                    targetCustomerId: row.existingCustomerId ?? row.candidates[0]?.customerId ?? "",
+                  };
+                }
+                onDecisionsChange(bulk);
+              }}
+              icon={<Check className="h-3.5 w-3.5" />}
+              label="Merge All"
+              activeColor="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700"
+            />
+            <DecisionButton
+              active={allNew}
+              onClick={() => {
+                const bulk: StitchDecisions = { ...decisions };
+                for (const row of result.uncertainRows) {
+                  bulk[row.rowIndex] = { action: "create_new" };
+                }
+                onDecisionsChange(bulk);
+              }}
+              icon={<Plus className="h-3.5 w-3.5" />}
+              label="New All"
+              activeColor="bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700"
+            />
+            <DecisionButton
+              active={allSkip}
+              onClick={() => {
+                const bulk: StitchDecisions = { ...decisions };
+                for (const row of result.uncertainRows) {
+                  bulk[row.rowIndex] = { action: "skip" };
+                }
+                onDecisionsChange(bulk);
+              }}
+              icon={<SkipForward className="h-3.5 w-3.5" />}
+              label="Skip All"
+              activeColor="bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-700"
+            />
+          </div>
+            );
+          })()}
           <div className="divide-y divide-amber-100 dark:divide-amber-900/40">
             {result.uncertainRows.map((row) => (
               <UncertainMatchRow
@@ -369,6 +385,128 @@ function SummaryCard({
   );
 }
 
+function EnrichmentSection({
+  rows,
+  decisions,
+  onDecisionChange,
+  onBulkDecision,
+  onPeekCustomer,
+}: {
+  rows: StitchPreviewRow[];
+  decisions: StitchDecisions;
+  onDecisionChange: (rowIndex: number, d: StitchDecision) => void;
+  onBulkDecision: (action: "accept" | "skip") => void;
+  onPeekCustomer: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const PAGE_SIZE = 20;
+  const [page, setPage] = useState(0);
+  const totalPages = Math.ceil(rows.length / PAGE_SIZE);
+  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  // Count how many are currently set to skip
+  const skipCount = rows.filter(
+    (r) => decisions[r.rowIndex]?.action === "skip"
+  ).length;
+  const acceptCount = rows.length - skipCount;
+
+  return (
+    <div className="rounded-xl border border-teal-200 dark:border-teal-800 bg-teal-50/10 dark:bg-teal-950/20 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full border-b border-teal-200/60 dark:border-teal-800/60 px-5 py-3 flex items-center justify-between text-left transition-colors hover:bg-teal-50/30 dark:hover:bg-teal-950/30"
+      >
+        <div className="flex items-center gap-2">
+          <Pencil className="h-4 w-4 text-teal-500" />
+          <p className="text-[13px] font-medium text-teal-800 dark:text-teal-300">
+            Confident Matches + Enrichment — {rows.length}{" "}
+            {rows.length === 1 ? "customer" : "customers"} matched
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] text-teal-600 dark:text-teal-400">
+            {acceptCount} accepted{skipCount > 0 ? `, ${skipCount} skipped` : ""}
+          </span>
+          {open ? (
+            <ChevronDown className="h-4 w-4 text-teal-400" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-teal-400" />
+          )}
+        </div>
+      </button>
+
+      {open && (
+        <>
+          {/* Bulk action bar */}
+          <div className="flex items-center justify-between px-5 py-2 border-b border-teal-100 dark:border-teal-900/40 bg-teal-50/20 dark:bg-teal-950/10">
+            <p className="text-[11px] text-teal-600 dark:text-teal-400">
+              Matched by email or ID. You can optionally update their missing fields.
+            </p>
+            <div className="flex items-center gap-1.5">
+              <DecisionButton
+                active={skipCount === 0}
+                onClick={() => onBulkDecision("accept")}
+                icon={<Check className="h-3.5 w-3.5" />}
+                label="Accept All"
+                activeColor="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700"
+              />
+              <DecisionButton
+                active={skipCount === rows.length}
+                onClick={() => onBulkDecision("skip")}
+                icon={<SkipForward className="h-3.5 w-3.5" />}
+                label="Skip All"
+                activeColor="bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-700"
+              />
+            </div>
+          </div>
+
+          <div className="divide-y divide-teal-100 dark:divide-teal-900/40">
+            {pageRows.map((row) => (
+              <EnrichmentRow
+                key={row.rowIndex}
+                row={row}
+                decision={
+                  decisions[row.rowIndex] ?? {
+                    action: "accept_enrichment",
+                    targetCustomerId: row.existingCustomerId!,
+                  }
+                }
+                onDecisionChange={(d) => onDecisionChange(row.rowIndex, d)}
+                onPeekCustomer={onPeekCustomer}
+              />
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 border-t border-teal-200/60 dark:border-teal-800/60 px-5 py-2">
+              <button
+                type="button"
+                disabled={page === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                className="text-[11px] text-teal-600 dark:text-teal-400 disabled:opacity-40 hover:underline"
+              >
+                Previous
+              </button>
+              <span className="text-[11px] text-teal-500 dark:text-teal-400">
+                Page {page + 1} of {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages - 1}
+                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                className="text-[11px] text-teal-600 dark:text-teal-400 disabled:opacity-40 hover:underline"
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function EnrichmentRow({
   row,
   decision,
@@ -438,7 +576,7 @@ function EnrichmentRow({
             onClick={() => onDecisionChange({ action: "skip" })}
             icon={<SkipForward className="h-3.5 w-3.5" />}
             label="Skip"
-            activeColor="bg-surface-muted text-text-secondary border-border-default"
+            activeColor="bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-700"
           />
         </div>
       </div>
@@ -446,63 +584,180 @@ function EnrichmentRow({
   );
 }
 
-function NameReviewRow({
-  row,
-  decision,
-  onDecisionChange,
+// ─── Name Review Section (grouped by customer) ──────────────
+
+interface NameReviewSectionProps {
+  rows: StitchPreviewRow[];
+  decisions: StitchDecisions;
+  onDecisionsChange: (decisions: StitchDecisions) => void;
+  onPeekCustomer: (id: string) => void;
+}
+
+function NameReviewSection({
+  rows,
+  decisions,
+  onDecisionsChange,
+  onPeekCustomer,
+}: NameReviewSectionProps) {
+  // Group rows by existing customer ID
+  const groups = useMemo(() => {
+    const map = new Map<string, StitchPreviewRow[]>();
+    for (const row of rows) {
+      const key = row.existingCustomerId ?? `row-${row.rowIndex}`;
+      const arr = map.get(key);
+      if (arr) arr.push(row);
+      else map.set(key, [row]);
+    }
+    return Array.from(map.entries());
+  }, [rows]);
+
+  const customerCount = groups.length;
+
+  return (
+    <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50/10 dark:bg-orange-950/20 overflow-hidden">
+      <div className="border-b border-orange-200/60 dark:border-orange-800/60 px-5 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-orange-500" />
+          <p className="text-[13px] font-medium text-orange-800 dark:text-orange-300">
+            Review Name — {customerCount}{" "}
+            {customerCount === 1 ? "customer" : "customers"} with different names
+            {rows.length !== customerCount && (
+              <span className="font-normal text-orange-600 dark:text-orange-400">
+                {" "}({rows.length} rows)
+              </span>
+            )}
+          </p>
+        </div>
+        <p className="text-[11px] text-orange-600 dark:text-orange-400">
+          Email matched, but the name in the CSV differs from the existing customer
+        </p>
+      </div>
+      <div className="divide-y divide-orange-100 dark:divide-orange-900/40">
+        {groups.map(([key, groupRows]) => (
+          <NameReviewGroup
+            key={key}
+            rows={groupRows}
+            decisions={decisions}
+            onDecisionsChange={onDecisionsChange}
+            onPeekCustomer={onPeekCustomer}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NameReviewGroup({
+  rows,
+  decisions,
+  onDecisionsChange,
   onPeekCustomer,
 }: {
-  row: StitchPreviewRow;
-  decision: StitchDecision;
-  onDecisionChange: (d: StitchDecision) => void;
+  rows: StitchPreviewRow[];
+  decisions: StitchDecisions;
+  onDecisionsChange: (decisions: StitchDecisions) => void;
   onPeekCustomer: (id: string) => void;
 }) {
-  const isKeep = decision.action === "merge_keep_name";
-  const isUpdate = decision.action === "merge_update_name";
-  const isSkipped = decision.action === "skip";
+  const [expanded, setExpanded] = useState(false);
+  const representative = rows[0];
+  const hasMultiple = rows.length > 1;
+
+  // Get the batch decision (from first row)
+  const firstDecision = decisions[representative.rowIndex] ?? {
+    action: "merge_keep_name" as const,
+    targetCustomerId: representative.existingCustomerId!,
+  };
+
+  // Check if all rows have the same decision
+  const allSame = rows.every((r) => {
+    const d = decisions[r.rowIndex];
+    return d ? d.action === firstDecision.action : firstDecision.action === "merge_keep_name";
+  });
+
+  const batchApply = (action: StitchDecision) => {
+    const updated = { ...decisions };
+    for (const row of rows) {
+      updated[row.rowIndex] = action;
+    }
+    onDecisionsChange(updated);
+  };
+
+  const isKeep = firstDecision.action === "merge_keep_name";
+  const isUpdate = firstDecision.action === "merge_update_name";
+  const isSkipped = firstDecision.action === "skip";
 
   return (
     <div className="px-5 py-4">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="font-mono text-[11px] text-orange-500 dark:text-orange-400">
-              Row {row.rowIndex}
-            </span>
-            <MatchBadge category={row.category} />
+            {hasMultiple && (
+              <button
+                type="button"
+                onClick={() => setExpanded(!expanded)}
+                className="text-text-muted hover:text-text-secondary transition-colors"
+              >
+                {expanded ? (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                )}
+              </button>
+            )}
+            {hasMultiple && (
+              <span className="text-[10px] font-medium bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-300 px-1.5 py-0.5 rounded">
+                {rows.length} rows
+              </span>
+            )}
+            {!hasMultiple && (
+              <span className="font-mono text-[11px] text-orange-500 dark:text-orange-400">
+                Row {representative.rowIndex}
+              </span>
+            )}
+            <MatchBadge category={representative.category} />
           </div>
           <div className="flex items-center gap-3 mb-1">
             <div className="min-w-0">
               <p className="text-[11px] text-text-muted">Existing name</p>
               <button
                 type="button"
-                onClick={() => row.existingCustomerId && onPeekCustomer(row.existingCustomerId)}
+                onClick={() =>
+                  representative.existingCustomerId &&
+                  onPeekCustomer(representative.existingCustomerId)
+                }
                 className="text-[13px] font-medium text-text-primary hover:text-orange-700 dark:hover:text-orange-300 hover:underline truncate text-left transition-colors"
               >
-                {row.existingCustomerName ?? "Unknown"}
+                {representative.existingCustomerName ?? "Unknown"}
               </button>
             </div>
             <span className="text-text-muted text-[12px] pt-3">&harr;</span>
             <div className="min-w-0">
               <p className="text-[11px] text-text-muted">CSV name</p>
               <p className="text-[13px] font-medium text-orange-700 dark:text-orange-300 truncate">
-                {row.name ?? "—"}
+                {representative.name ?? "—"}
               </p>
             </div>
           </div>
           <p className="text-[12px] text-text-muted truncate">
-            {row.email ?? row.existingCustomerEmail ?? "No email"}
+            {representative.email ??
+              representative.existingCustomerEmail ??
+              "No email"}
           </p>
+          {hasMultiple && allSame && !expanded && (
+            <p className="text-[11px] text-text-muted mt-1">
+              Applied to {rows.length} rows
+            </p>
+          )}
         </div>
 
-        {/* Decision buttons */}
+        {/* Batch decision buttons */}
         <div className="flex items-center gap-1.5 pt-1 shrink-0">
           <DecisionButton
-            active={isKeep}
+            active={isKeep && allSame}
             onClick={() =>
-              onDecisionChange({
+              batchApply({
                 action: "merge_keep_name",
-                targetCustomerId: row.existingCustomerId!,
+                targetCustomerId: representative.existingCustomerId!,
               })
             }
             icon={<Check className="h-3.5 w-3.5" />}
@@ -510,11 +765,11 @@ function NameReviewRow({
             activeColor="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700"
           />
           <DecisionButton
-            active={isUpdate}
+            active={isUpdate && allSame}
             onClick={() =>
-              onDecisionChange({
+              batchApply({
                 action: "merge_update_name",
-                targetCustomerId: row.existingCustomerId!,
+                targetCustomerId: representative.existingCustomerId!,
               })
             }
             icon={<Pencil className="h-3.5 w-3.5" />}
@@ -522,14 +777,88 @@ function NameReviewRow({
             activeColor="bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700"
           />
           <DecisionButton
-            active={isSkipped}
-            onClick={() => onDecisionChange({ action: "skip" })}
+            active={isSkipped && allSame}
+            onClick={() => batchApply({ action: "skip" })}
             icon={<SkipForward className="h-3.5 w-3.5" />}
             label="Skip"
-            activeColor="bg-surface-muted text-text-secondary border-border-default"
+            activeColor="bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-700"
           />
         </div>
       </div>
+
+      {/* Expanded per-row overrides */}
+      {expanded && hasMultiple && (
+        <div className="mt-3 ml-6 border-l-2 border-orange-200 dark:border-orange-800 pl-4 space-y-2">
+          {rows.map((row) => {
+            const rowDecision = decisions[row.rowIndex] ?? {
+              action: "merge_keep_name" as const,
+              targetCustomerId: row.existingCustomerId!,
+            };
+            return (
+              <div
+                key={row.rowIndex}
+                className="flex items-center justify-between gap-3 py-1.5"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-[11px] text-orange-500 dark:text-orange-400 shrink-0">
+                    Row {row.rowIndex}
+                  </span>
+                  <span className="text-[12px] text-text-secondary truncate">
+                    {row.name ?? "—"}
+                  </span>
+                  <span className="text-[11px] text-text-muted truncate">
+                    {row.email ?? ""}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <DecisionButton
+                    active={rowDecision.action === "merge_keep_name"}
+                    onClick={() =>
+                      onDecisionsChange({
+                        ...decisions,
+                        [row.rowIndex]: {
+                          action: "merge_keep_name",
+                          targetCustomerId: row.existingCustomerId!,
+                        },
+                      })
+                    }
+                    icon={<Check className="h-3 w-3" />}
+                    label="Keep"
+                    activeColor="bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-300 dark:border-emerald-700"
+                  />
+                  <DecisionButton
+                    active={rowDecision.action === "merge_update_name"}
+                    onClick={() =>
+                      onDecisionsChange({
+                        ...decisions,
+                        [row.rowIndex]: {
+                          action: "merge_update_name",
+                          targetCustomerId: row.existingCustomerId!,
+                        },
+                      })
+                    }
+                    icon={<Pencil className="h-3 w-3" />}
+                    label="Update"
+                    activeColor="bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700"
+                  />
+                  <DecisionButton
+                    active={rowDecision.action === "skip"}
+                    onClick={() =>
+                      onDecisionsChange({
+                        ...decisions,
+                        [row.rowIndex]: { action: "skip" },
+                      })
+                    }
+                    icon={<SkipForward className="h-3 w-3" />}
+                    label="Skip"
+                    activeColor="bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-700"
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -676,7 +1005,7 @@ function SingleCandidateRow({
             onClick={() => onDecisionChange({ action: "skip" })}
             icon={<SkipForward className="h-3.5 w-3.5" />}
             label="Skip"
-            activeColor="bg-surface-muted text-text-secondary border-border-default"
+            activeColor="bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-700"
           />
         </div>
       </div>
@@ -776,7 +1105,7 @@ function MultiCandidateRow({
           onClick={() => onDecisionChange({ action: "skip" })}
           icon={<SkipForward className="h-3.5 w-3.5" />}
           label="Skip"
-          activeColor="bg-surface-muted text-text-secondary border-border-default"
+          activeColor="bg-rose-100 text-rose-700 border-rose-300 dark:bg-rose-900/50 dark:text-rose-300 dark:border-rose-700"
         />
       </div>
     </div>
@@ -1189,16 +1518,40 @@ function FlaggedRowsSection({
                   <div className="flex items-center gap-3 text-[12px] text-text-secondary">
                     {row.name && <span className="truncate">{row.name}</span>}
                     {row.email && <span className="text-text-muted truncate">{row.email}</span>}
+                    {!row.email && (() => {
+                      const emailIssue = row.flagIssues?.find(i => i.field === "email" && i.value);
+                      return emailIssue ? (
+                        <span className="text-amber-500 dark:text-amber-400 line-through truncate">
+                          {emailIssue.value}
+                        </span>
+                      ) : null;
+                    })()}
                     {row.phone && <span className="text-text-muted truncate">{row.phone}</span>}
-                    {!row.name && !row.email && !row.phone && (
+                    {!row.name && !row.email && !row.phone && !row.flagIssues?.some(i => i.field === "email" && i.value) && (
                       <span className="text-text-muted">No identifiable fields</span>
                     )}
                   </div>
-                  {row.flagReason && (
+                  {row.flagIssues ? (
+                    <ul className="mt-1 space-y-0.5">
+                      {row.flagIssues.map((issue, idx) => (
+                        <li key={idx} className={cn(
+                          "text-[11px] flex items-center gap-1.5",
+                          issue.severity === "warning"
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-rose-600 dark:text-rose-400"
+                        )}>
+                          {issue.severity === "warning"
+                            ? <AlertTriangle className="h-3 w-3 shrink-0" />
+                            : <XCircle className="h-3 w-3 shrink-0" />}
+                          {issue.message}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : row.flagReason ? (
                     <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400">
                       {row.flagReason}
                     </p>
-                  )}
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-1.5 pt-1 shrink-0">
                   <DecisionButton
