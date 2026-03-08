@@ -24,6 +24,8 @@ export default async function CustomersPage({
   const params = await searchParams;
   const profile =
     typeof params.profile === "string" ? params.profile : undefined;
+  const rawQ = params.q;
+  const initialSearch = typeof rawQ === "string" ? rawQ : Array.isArray(rawQ) ? (rawQ[0] ?? "") : "";
   const { customers, config } = await getComputedCustomersForTable(profile);
 
   // Validate channel values against actual customer data
@@ -36,6 +38,7 @@ export default async function CustomersPage({
     <CustomersClient
       customers={customers}
       config={config}
+      initialSearch={initialSearch}
       initialFilters={{
         segment: parseMulti(params.segment, VALID_SEGMENT),
         risk: parseMulti(params.risk, VALID_RISK),

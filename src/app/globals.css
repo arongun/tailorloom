@@ -231,89 +231,89 @@
 /* Bar 1 (top-left, tall→short): shrinks from bottom, top stays */
 @keyframes sb-rect1 {
   0%, 100% { y: 3px; height: 9px; }
-  50% { y: 3px; height: 5px; }
+  50% { y: 3px; height: 3px; }
 }
 /* Bar 2 (top-right, short→tall): grows downward, top stays */
 @keyframes sb-rect2 {
   0%, 100% { y: 3px; height: 5px; }
-  50% { y: 3px; height: 9px; }
+  50% { y: 3px; height: 11px; }
 }
 /* Bar 3 (bottom-right, tall→short): shrinks from top, bottom stays at 21 */
 @keyframes sb-rect3 {
   0%, 100% { y: 12px; height: 9px; }
-  50% { y: 16px; height: 5px; }
+  50% { y: 18px; height: 3px; }
 }
 /* Bar 4 (bottom-left, short→tall): grows upward, bottom stays at 21 */
 @keyframes sb-rect4 {
   0%, 100% { y: 16px; height: 5px; }
-  50% { y: 12px; height: 9px; }
+  50% { y: 10px; height: 11px; }
 }
 
 /* Customers: geometry-based bounce (no transform → no blur) */
 @keyframes sb-cu-head1 {
   0% { cy: 7px; }
-  30% { cy: 8.5px; }
-  50% { cy: 6.5px; }
-  65% { cy: 7.3px; }
+  30% { cy: 10px; }
+  50% { cy: 5px; }
+  65% { cy: 7.5px; }
   100% { cy: 7px; }
 }
 @keyframes sb-cu-head2 {
   0%   { d: path("M16 3.128a4 4 0 0 1 0 7.744"); }
-  30%  { d: path("M16 4.628a4 4 0 0 1 0 7.744"); }
-  50%  { d: path("M16 2.628a4 4 0 0 1 0 7.744"); }
-  65%  { d: path("M16 3.428a4 4 0 0 1 0 7.744"); }
+  30%  { d: path("M16 6.128a4 4 0 0 1 0 7.744"); }
+  50%  { d: path("M16 1.128a4 4 0 0 1 0 7.744"); }
+  65%  { d: path("M16 3.628a4 4 0 0 1 0 7.744"); }
   100% { d: path("M16 3.128a4 4 0 0 1 0 7.744"); }
 }
 @keyframes sb-cu-body1 {
   0%   { d: path("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
-  35%  { d: path("M16 21.8v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
-  55%  { d: path("M16 20.8v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
-  70%  { d: path("M16 21.2v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
+  35%  { d: path("M16 23v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
+  55%  { d: path("M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
+  70%  { d: path("M16 21.4v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
   100% { d: path("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"); }
 }
 @keyframes sb-cu-body2 {
   0%   { d: path("M22 21v-2a4 4 0 0 0-3-3.87"); }
-  35%  { d: path("M22 21.8v-2a4 4 0 0 0-3-3.87"); }
-  55%  { d: path("M22 20.8v-2a4 4 0 0 0-3-3.87"); }
-  70%  { d: path("M22 21.2v-2a4 4 0 0 0-3-3.87"); }
+  35%  { d: path("M22 23v-2a4 4 0 0 0-3-3.87"); }
+  55%  { d: path("M22 20v-2a4 4 0 0 0-3-3.87"); }
+  70%  { d: path("M22 21.4v-2a4 4 0 0 0-3-3.87"); }
   100% { d: path("M22 21v-2a4 4 0 0 0-3-3.87"); }
 }
 
 /* Upload: geometry-based arrow lift (no transform → no blur) */
 @keyframes sb-ul-line {
   0%, 100% { d: path("M12 3v12"); }
-  40%      { d: path("M12 2v12"); }
-  75%      { d: path("M12 2.7v12"); }
+  40%      { d: path("M12 0.5v12"); }
+  75%      { d: path("M12 2.2v12"); }
 }
 @keyframes sb-ul-chev {
   0%, 100% { d: path("M17 8 12 3 7 8"); }
-  40%      { d: path("M17 7 12 2 7 7"); }
-  75%      { d: path("M17 7.7 12 2.7 7 7.7"); }
+  40%      { d: path("M17 5.5 12 0.5 7 5.5"); }
+  75%      { d: path("M17 7.2 12 2.2 7 7.2"); }
 }
 @keyframes sb-ul-tray {
   0%, 100% { d: path("M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"); }
-  40%      { d: path("M21 16v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"); }
-  75%      { d: path("M21 15.3v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"); }
+  40%      { d: path("M21 17v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"); }
+  75%      { d: path("M21 15.5v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"); }
 }
 
 /* Imports: circle nudges counter-clockwise then bounces back */
 @keyframes sb-circle-nudge {
   0% { transform: rotate(0deg); }
-  35% { transform: rotate(-15deg); }
-  55% { transform: rotate(3deg); }
-  70% { transform: rotate(-1.5deg); }
-  85% { transform: rotate(0.5deg); }
+  35% { transform: rotate(-25deg); }
+  55% { transform: rotate(6deg); }
+  70% { transform: rotate(-3deg); }
+  85% { transform: rotate(1deg); }
   100% { transform: rotate(0deg); }
 }
 
 /* Conflicts: rotational shake then settle */
 @keyframes sb-alert-shake {
   0% { transform: rotate(0deg); }
-  15% { transform: rotate(-4.5deg); }
-  30% { transform: rotate(3.5deg); }
-  45% { transform: rotate(-2deg); }
-  60% { transform: rotate(1.5deg); }
-  78% { transform: rotate(-0.7deg); }
+  15% { transform: rotate(-8deg); }
+  30% { transform: rotate(6deg); }
+  45% { transform: rotate(-4deg); }
+  60% { transform: rotate(2.5deg); }
+  78% { transform: rotate(-1deg); }
   100% { transform: rotate(0deg); }
 }
 
@@ -326,18 +326,18 @@
 /* Moon: gentle rock */
 @keyframes sb-moon-rock {
   0%, 100% { transform: rotate(0deg); }
-  25% { transform: rotate(-12deg); }
-  75% { transform: rotate(12deg); }
+  25% { transform: rotate(-18deg); }
+  75% { transform: rotate(18deg); }
 }
 
 /* Sign out: geometry-based arrow slide (no transform → no blur) */
 @keyframes sb-lo-chev {
   0%, 100% { d: path("M16 17 21 12 16 7"); }
-  50%      { d: path("M18 17 23 12 18 7"); }
+  50%      { d: path("M19 17 24 12 19 7"); }
 }
 @keyframes sb-lo-line {
   0%, 100% { d: path("M21 12H9"); }
-  50%      { d: path("M23 12H11"); }
+  50%      { d: path("M24 12H12"); }
 }
 
 /* ── Sidebar hover rules (scoped to .sb-nav) ─── */

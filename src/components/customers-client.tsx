@@ -12,14 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card } from "@/components/ui/card";
 import { CustomerDetailSheet } from "@/components/customer-detail-sheet";
 import { CustomerDetailPanel } from "@/components/customer-detail-panel";
 import { FilterMultiSelect } from "@/components/filter-multi-select";
@@ -143,6 +141,7 @@ export interface InitialFilterArrays {
 interface CustomersClientProps {
   customers: ComputedCustomer[];
   config: ResolvedConfig;
+  initialSearch: string;
   initialFilters: InitialFilterArrays;
 }
 
@@ -151,6 +150,7 @@ interface CustomersClientProps {
 export function CustomersClient({
   customers,
   config,
+  initialSearch,
   initialFilters,
 }: CustomersClientProps) {
   // Derive available channels from customer data
@@ -172,7 +172,7 @@ export function CustomersClient({
   useEffect(() => setMounted(true), []);
 
   // ── State ───────────────────────────────────────────────
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [segmentFilter, setSegmentFilter] = useState(() =>
     initSet(initialFilters.segment, ALL_SEGMENTS)
   );
@@ -340,11 +340,16 @@ export function CustomersClient({
     syncSet("tier", tierFilter, ALL_TIERS);
     syncSet("repeat", repeatFilter, ALL_REPEATS);
     syncSet("channel", channelFilter, allChannels);
+    if (search) {
+      params.set("q", search);
+    } else {
+      params.delete("q");
+    }
     const newUrl = params.toString()
       ? `${window.location.pathname}?${params.toString()}`
       : window.location.pathname;
     window.history.replaceState({}, "", newUrl);
-  }, [segmentFilter, riskFilter, tierFilter, repeatFilter, channelFilter, allChannels]);
+  }, [segmentFilter, riskFilter, tierFilter, repeatFilter, channelFilter, allChannels, search]);
 
   // ── Handlers ────────────────────────────────────────────
   const handleSort = (key: SortKey) => {
@@ -366,6 +371,7 @@ export function CustomersClient({
   };
 
   const clearAllFilters = useCallback(() => {
+    setSearch("");
     setSegmentFilter(new Set(ALL_SEGMENTS));
     setRiskFilter(new Set(ALL_RISKS));
     setTierFilter(new Set(ALL_TIERS));
@@ -377,6 +383,7 @@ export function CustomersClient({
   const isActiveSort = (key: SortKey) => sortKey === key;
 
   const hasActiveFilters =
+    search.length > 0 ||
     segmentFilter.size < ALL_SEGMENTS.size ||
     riskFilter.size < ALL_RISKS.size ||
     tierFilter.size < ALL_TIERS.size ||
@@ -411,88 +418,90 @@ export function CustomersClient({
   };
 
   return (
-    <div className="p-8 max-w-[1400px]">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-[-0.02em] text-text-primary">
-          Customers
-        </h1>
-        <p className="mt-1 text-[13px] text-text-muted">
-          {filtered.length} of {customers.length} customers
-        </p>
-      </div>
-
-      {/* Filter bar */}
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 max-w-sm min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-          <Input
-            placeholder="Search by name or email..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 text-[13px] h-9 border-border-default bg-surface"
-          />
+    <div className="flex flex-col h-screen pt-8 px-8 max-w-[1400px]">
+      {/* Header — always visible */}
+      <div className="shrink-0">
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold tracking-[-0.02em] text-text-primary">
+            Customers
+          </h1>
+          <p className="mt-1 text-[13px] text-text-muted">
+            {filtered.length} of {customers.length} customers
+          </p>
         </div>
-        <FilterMultiSelect
-          label="Segment"
-          options={SEGMENT_OPTIONS}
-          selected={segmentFilter}
-          allValues={ALL_SEGMENTS}
-          onChange={setSegmentFilter}
-          width="w-[180px]"
-        />
-        <FilterMultiSelect
-          label="Risk"
-          options={RISK_OPTIONS}
-          selected={riskFilter}
-          allValues={ALL_RISKS}
-          onChange={setRiskFilter}
-        />
-        <FilterMultiSelect
-          label="Tier"
-          options={TIER_OPTIONS}
-          selected={tierFilter}
-          allValues={ALL_TIERS}
-          onChange={setTierFilter}
-        />
-        <FilterMultiSelect
-          label="Repeat"
-          options={REPEAT_OPTIONS}
-          selected={repeatFilter}
-          allValues={ALL_REPEATS}
-          onChange={setRepeatFilter}
-        />
-        {channelOptions.length > 0 && (
+
+        {/* Filter bar */}
+        <div className="mb-1 flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 max-w-sm min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+            <Input
+              placeholder="Search by name or email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 text-[13px] h-9 border-border-default bg-surface"
+            />
+          </div>
           <FilterMultiSelect
-            label="Channel"
-            options={channelOptions}
-            selected={channelFilter}
-            allValues={allChannels}
-            onChange={setChannelFilter}
+            label="Segment"
+            options={SEGMENT_OPTIONS}
+            selected={segmentFilter}
+            allValues={ALL_SEGMENTS}
+            onChange={setSegmentFilter}
+            width="w-[180px]"
           />
-        )}
+          <FilterMultiSelect
+            label="Risk"
+            options={RISK_OPTIONS}
+            selected={riskFilter}
+            allValues={ALL_RISKS}
+            onChange={setRiskFilter}
+          />
+          <FilterMultiSelect
+            label="Tier"
+            options={TIER_OPTIONS}
+            selected={tierFilter}
+            allValues={ALL_TIERS}
+            onChange={setTierFilter}
+          />
+          <FilterMultiSelect
+            label="Repeat"
+            options={REPEAT_OPTIONS}
+            selected={repeatFilter}
+            allValues={ALL_REPEATS}
+            onChange={setRepeatFilter}
+          />
+          {channelOptions.length > 0 && (
+            <FilterMultiSelect
+              label="Channel"
+              options={channelOptions}
+              selected={channelFilter}
+              allValues={allChannels}
+              onChange={setChannelFilter}
+            />
+          )}
+        </div>
+
+        {/* Clear filters row — always takes space, button fades in/out */}
+        <div className="flex justify-end h-5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`h-7 text-[12px] text-text-muted transition-opacity ${
+              hasActiveFilters ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
+            onClick={clearAllFilters}
+          >
+            <X className="mr-1 h-3 w-3" />
+            Clear filters
+          </Button>
+        </div>
       </div>
 
-      {/* Clear filters row — always takes space, button fades in/out */}
-      <div className="mb-4 flex justify-end h-7">
-        <Button
-          variant="ghost"
-          size="sm"
-          className={`h-7 text-[12px] text-text-muted transition-opacity ${
-            hasActiveFilters ? "opacity-100" : "opacity-0 pointer-events-none"
-          }`}
-          onClick={clearAllFilters}
-        >
-          <X className="mr-1 h-3 w-3" />
-          Clear filters
-        </Button>
-      </div>
-
-      {/* Table */}
-      <Card className="border-border-default shadow-none">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent border-border-default">
+      {/* Scrollable table */}
+      <div className="flex-1 min-h-0 overflow-auto border border-border-default rounded-t-lg">
+        <table className="w-full caption-bottom text-sm">
+          <TableHeader className="sticky top-0 z-20 bg-surface [&_tr]:hover:bg-transparent">
+            <TableRow className="border-border-default">
               <TableHead
                 className={`pl-4 text-[11px] font-medium tracking-wide uppercase cursor-pointer select-none ${isActiveSort("full_name") ? "text-text-primary" : "text-text-muted"}`}
                 onClick={() => handleSort("full_name")}
@@ -606,8 +615,8 @@ export function CustomersClient({
               </TableRow>
             )}
           </TableBody>
-        </Table>
-      </Card>
+        </table>
+      </div>
 
       {/* Customer Detail — desktop: non-modal panel, mobile: modal sheet */}
       {mounted && isDesktop && (
